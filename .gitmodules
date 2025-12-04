@@ -1,0 +1,3 @@
+[submodule ".claude/skills/fabric/fabric-repo"]
+	path = .claude/skills/Fabric/fabric-repo
+	url = https://github.com/danielmiessler/fabric.git

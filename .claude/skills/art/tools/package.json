@@ -1,0 +1,15 @@
+{
+  "name": "ulart-tools",
+  "version": "1.0.0",
+  "description": "UL Art generation tools - image and video generation CLIs",
+  "type": "module",
+  "scripts": {
+    "image": "bun generate-ulart-image.ts",
+    "video": "bun generate-ulart-video.ts"
+  },
+  "dependencies": {
+    "replicate": "^1.0.1",
+    "openai": "^4.73.0",
+    "@google/genai": "^1.30.0"
+  }
+}

@@ -4,19 +4,25 @@
  * Interactive configuration tool for Personal AI Infrastructure
  */
 
+import { parseArgs } from 'node:util';
 import * as p from '@clack/prompts';
-import { parseArgs } from 'util';
-import { runInteractiveSetup } from './interactive';
-import { Transaction } from './core/transaction';
-import { logger } from './core/logger';
 import {
-  createDirectories,
-  writeProfile,
-  writePlist,
-  updateShellProfile,
   type SetupConfig,
+  createDirectories,
+  updateShellProfile,
+  writePlist,
+  writeProfile,
 } from './configurators';
-import { expandPath, validatePath, validateEmail, validateName, validateAssistantName } from './validators';
+import { logger } from './core/logger';
+import { Transaction } from './core/transaction';
+import { runInteractiveSetup } from './interactive';
+import {
+  expandPath,
+  validateAssistantName,
+  validateEmail,
+  validateName,
+  validatePath,
+} from './validators';
 
 /**
  * Parse command line arguments
@@ -55,7 +61,7 @@ Usage:
   bun run setup.ts [options]
 
 Options:
-  --pai-dir <path>          PAI installation directory (default: ~/.claude)
+  --pai-dir <path>          PAI installation directory (default: ${PAI_DIR})
   --name <name>             Your name
   --email <email>           Your email
   --assistant-name <name>   AI assistant name (default: Kai)
@@ -76,7 +82,7 @@ Examples:
   bun run setup.ts
 
   # Non-interactive setup
-  bun run setup.ts --pai-dir ~/.claude --name "Jane Doe" --email jane@example.com --force
+  bun run setup.ts --pai-dir ${PAI_DIR} --name "Jane Doe" --email jane@example.com --force
 `);
 }
 
@@ -121,7 +127,7 @@ function buildConfigFromArgs(args: ReturnType<typeof parseCliArgs>): SetupConfig
     userEmail: args.email,
     assistantName,
     assistantColor: args['assistant-color'] || 'purple',
-    voicePort: parseInt(args['voice-port'] || '8888', 10),
+    voicePort: Number.parseInt(args['voice-port'] || '8888', 10),
     voiceEnabled: !args['skip-voice'] && process.platform === 'darwin',
     updateShellProfile: !args['skip-shell-profile'],
   };
@@ -236,9 +242,11 @@ async function main() {
 
     logger.blank();
     logger.info('Next steps:');
-    logger.step(`1. Reload your shell: source ~/.zshrc`);
+    logger.step('1. Reload your shell: source ~/.zshrc');
     if (config.voiceEnabled) {
-      logger.step(`2. Load voice server: launchctl load ~/Library/LaunchAgents/com.pai.voiceserver.plist`);
+      logger.step(
+        '2. Load voice server: launchctl load ~/Library/LaunchAgents/com.pai.voiceserver.plist'
+      );
     }
     logger.step(`${config.voiceEnabled ? '3' : '2'}. Start Claude: claude`);
     logger.blank();

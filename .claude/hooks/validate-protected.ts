@@ -2,7 +2,7 @@
 /**
  * PAI Protected Files Validator
  *
- * Ensures PAI-specific files haven't been overwritten with Kai content.
+ * Ensures PAI-specific files haven't been overwritten with Marvin content.
  * Run before committing changes to PAI repository.
  *
  * Usage:
@@ -10,9 +10,9 @@
  *   bun ~/Projects/PAI/.claude/hooks/validate-protected.ts --staged  (check only staged files)
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 interface ProtectedManifest {
   version: string;
@@ -50,9 +50,12 @@ function getStagedFiles(): string[] {
   try {
     const output = execSync('git diff --cached --name-only', {
       cwd: PAI_ROOT,
-      encoding: 'utf-8'
+      encoding: 'utf-8',
     });
-    return output.trim().split('\n').filter(f => f.length > 0);
+    return output
+      .trim()
+      .split('\n')
+      .filter((f) => f.length > 0);
   } catch {
     return [];
   }
@@ -70,7 +73,10 @@ function getAllProtectedFiles(manifest: ProtectedManifest): string[] {
   return files;
 }
 
-function checkFileContent(filePath: string, manifest: ProtectedManifest): {
+function checkFileContent(
+  filePath: string,
+  manifest: ProtectedManifest
+): {
   valid: boolean;
   violations: string[];
 } {
@@ -89,7 +95,7 @@ function checkFileContent(filePath: string, manifest: ProtectedManifest): {
   const isException = exceptions.includes(filePath);
 
   // Check for forbidden patterns (skip if exception)
-  if (patternCategory && patternCategory.patterns && !isException) {
+  if (patternCategory?.patterns && !isException) {
     for (const pattern of patternCategory.patterns) {
       const regex = new RegExp(pattern, 'g');
       const matches = content.match(regex);
@@ -101,7 +107,7 @@ function checkFileContent(filePath: string, manifest: ProtectedManifest): {
   }
 
   // Check category-specific validation
-  for (const [categoryName, category] of Object.entries(manifest.protected)) {
+  for (const [_categoryName, category] of Object.entries(manifest.protected)) {
     if (!category.files?.includes(filePath) || !category.validation) {
       continue;
     }
@@ -113,17 +119,17 @@ function checkFileContent(filePath: string, manifest: ProtectedManifest): {
       }
     }
 
-    // Must not contain private Kai data (skip if exception file)
-    if (category.validation.includes('private Kai data') && !isException) {
+    // Must not contain private Marvin data (skip if exception file)
+    if (category.validation.includes('private Marvin data') && !isException) {
       const privatePatterns = [
         /\/Users\/daniel\/\.claude\/skills\/personal/,
         /daemon\.plist/,
-        /Kai \(Personal AI Infrastructure\)/,
+        /Marvin \(Personal AI Infrastructure\)/,
       ];
 
       for (const pattern of privatePatterns) {
         if (pattern.test(content)) {
-          violations.push(`Contains private Kai reference: ${pattern.source}`);
+          violations.push(`Contains private Marvin reference: ${pattern.source}`);
         }
       }
     }
@@ -134,8 +140,7 @@ function checkFileContent(filePath: string, manifest: ProtectedManifest): {
         /ANTHROPIC_API_KEY=sk-/,
         /ELEVENLABS_API_KEY=(?!your_elevenlabs_api_key_here)/,
         /PERPLEXITY_API_KEY=(?!your_perplexity_api_key_here)/,
-        /@danielmiessler\.com/,
-        /@unsupervised-learning\.com/,
+        /@me\.com/,
       ];
 
       for (const pattern of secretPatterns) {
@@ -164,7 +169,7 @@ async function main() {
 
   if (stagedOnly) {
     const stagedFiles = getStagedFiles();
-    filesToCheck = allProtectedFiles.filter(f => stagedFiles.includes(f));
+    filesToCheck = allProtectedFiles.filter((f) => stagedFiles.includes(f));
 
     if (filesToCheck.length === 0) {
       console.log(`\n${GREEN}✅ No protected files staged for commit${RESET}\n`);
@@ -202,16 +207,16 @@ async function main() {
     }
   }
 
-  console.log('\n' + '='.repeat(60));
+  console.log(`\n${'='.repeat(60)}`);
 
   if (hasViolations) {
     console.log(`\n${RED}🚫 VALIDATION FAILED${RESET}\n`);
     console.log('Protected files contain content that should not be in public PAI.');
-    console.log('\n' + YELLOW + 'Common fixes:' + RESET);
+    console.log(`\n${YELLOW}Common fixes:${RESET}`);
     console.log('  1. Remove API keys and secrets');
     console.log('  2. Remove personal email addresses');
-    console.log('  3. Remove references to private Kai data');
-    console.log('  4. Ensure PAI-specific files reference "PAI" not "Kai"');
+    console.log('  3. Remove references to private Marvin data');
+    console.log('  4. Ensure PAI-specific files reference "PAI" not "Marvin"');
     console.log('\n📖 See .pai-protected.json for details\n');
     process.exit(1);
   } else {

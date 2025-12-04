@@ -1,0 +1,42 @@
+{
+  "name": "pai",
+  "version": "1.0.0",
+  "description": "Personal AI Infrastructure - Open-source scaffolding for AI-powered workflows",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "biome check --diagnostic-level=error .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "typecheck": "tsc --noEmit",
+    "security": "gitleaks detect --source . --verbose",
+    "security:staged": "gitleaks protect --staged --verbose",
+    "validate": "bun .claude/hooks/validate-protected.ts",
+    "validate:staged": "bun .claude/hooks/validate-protected.ts --staged",
+    "selftest": "bun .claude/hooks/self-test.ts",
+    "check": "bun run lint && bun run security && bun run validate",
+    "check:staged": "bun run lint:fix && bun run security:staged && bun run validate:staged",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/bun": "^1.1.14",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md}": [
+      "biome check --write --no-errors-on-unmatched"
+    ],
+    "*": [
+      "gitleaks protect --staged --no-banner"
+    ]
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "packageManager": "bun@1.1.38"
+}

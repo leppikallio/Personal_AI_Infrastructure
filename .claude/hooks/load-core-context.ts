@@ -25,16 +25,16 @@
  * - Gives your AI immediate access to your complete personal context
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import { PAI_DIR, SKILLS_DIR } from './lib/pai-paths';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { SKILLS_DIR } from './lib/pai-paths';
 
 async function main() {
   try {
     // Check if this is a subagent session - if so, exit silently
     const claudeProjectDir = process.env.CLAUDE_PROJECT_DIR || '';
-    const isSubagent = claudeProjectDir.includes('/.claude/agents/') ||
-                      process.env.CLAUDE_AGENT_TYPE !== undefined;
+    const isSubagent =
+      claudeProjectDir.includes('/.claude/agents/') || process.env.CLAUDE_AGENT_TYPE !== undefined;
 
     if (isSubagent) {
       // Subagent sessions don't need CORE context loading
@@ -48,28 +48,16 @@ async function main() {
     // Verify CORE skill file exists
     if (!existsSync(coreSkillPath)) {
       console.error(`❌ CORE skill not found at: ${coreSkillPath}`);
-      console.error(`💡 Ensure CORE/SKILL.md exists or check PAI_DIR environment variable`);
+      console.error('💡 Ensure CORE/SKILL.md exists or check PAI_DIR environment variable');
       process.exit(1);
     }
 
     console.error('📚 Reading CORE context from skill file...');
 
     // Read the CORE SKILL.md file content
-    let coreContent = readFileSync(coreSkillPath, 'utf-8');
+    const coreContent = readFileSync(coreSkillPath, 'utf-8');
 
-    // Perform Dynamic Variable Substitution
-    // This allows SKILL.md to be generic while the session is personalized
-    const daName = process.env.DA || 'PAI';
-    const daColor = process.env.DA_COLOR || 'blue';
-    const engineerName = process.env.ENGINEER_NAME || 'User';
-
-    // Replace placeholders {{DA}}, {{DA_COLOR}}, {{ENGINEER_NAME}}
-    coreContent = coreContent
-      .replace(/\{\{DA\}\}/g, daName)
-      .replace(/\{\{DA_COLOR\}\}/g, daColor)
-      .replace(/\{\{ENGINEER_NAME\}\}/g, engineerName);
-
-    console.error(`✅ Read ${coreContent.length} characters from CORE SKILL.md (Personalized for ${engineerName} & ${daName})`);
+    console.error(`✅ Read ${coreContent.length} characters from CORE SKILL.md`);
 
     // Output the CORE content as a system-reminder
     // This will be injected into Claude's context at session start

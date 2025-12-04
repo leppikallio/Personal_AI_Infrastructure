@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 /**
  * Generate 4-word tab title summarizing what was done
@@ -17,10 +17,44 @@ function generateTabTitle(prompt: string, completedLine?: string): string {
       .trim();
 
     // Extract meaningful words from the completed line
-    const completedWords = cleanCompleted.split(/\s+/)
-      .filter(word => word.length > 2 &&
-        !['the', 'and', 'but', 'for', 'are', 'with', 'his', 'her', 'this', 'that', 'you', 'can', 'will', 'have', 'been', 'your', 'from', 'they', 'were', 'said', 'what', 'them', 'just', 'told', 'how', 'does', 'into', 'about', 'completed'].includes(word.toLowerCase()))
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+    const completedWords = cleanCompleted
+      .split(/\s+/)
+      .filter(
+        (word) =>
+          word.length > 2 &&
+          ![
+            'the',
+            'and',
+            'but',
+            'for',
+            'are',
+            'with',
+            'his',
+            'her',
+            'this',
+            'that',
+            'you',
+            'can',
+            'will',
+            'have',
+            'been',
+            'your',
+            'from',
+            'they',
+            'were',
+            'said',
+            'what',
+            'them',
+            'just',
+            'told',
+            'how',
+            'does',
+            'into',
+            'about',
+            'completed',
+          ].includes(word.toLowerCase())
+      )
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
     if (completedWords.length >= 2) {
       // Build a 4-word summary from completed line
@@ -34,17 +68,89 @@ function generateTabTitle(prompt: string, completedLine?: string): string {
 
   // Fall back to parsing the prompt
   const cleanPrompt = prompt.replace(/[^\w\s]/g, ' ').trim();
-  const words = cleanPrompt.split(/\s+/).filter(word =>
-    word.length > 2 &&
-    !['the', 'and', 'but', 'for', 'are', 'with', 'his', 'her', 'this', 'that', 'you', 'can', 'will', 'have', 'been', 'your', 'from', 'they', 'were', 'said', 'what', 'them', 'just', 'told', 'how', 'does', 'into', 'about'].includes(word.toLowerCase())
-  );
+  const words = cleanPrompt
+    .split(/\s+/)
+    .filter(
+      (word) =>
+        word.length > 2 &&
+        ![
+          'the',
+          'and',
+          'but',
+          'for',
+          'are',
+          'with',
+          'his',
+          'her',
+          'this',
+          'that',
+          'you',
+          'can',
+          'will',
+          'have',
+          'been',
+          'your',
+          'from',
+          'they',
+          'were',
+          'said',
+          'what',
+          'them',
+          'just',
+          'told',
+          'how',
+          'does',
+          'into',
+          'about',
+        ].includes(word.toLowerCase())
+    );
 
   const lowerPrompt = prompt.toLowerCase();
 
   // Find action verb if present
-  const actionVerbs = ['test', 'rename', 'fix', 'debug', 'research', 'write', 'create', 'make', 'build', 'implement', 'analyze', 'review', 'update', 'modify', 'generate', 'develop', 'design', 'deploy', 'configure', 'setup', 'install', 'remove', 'delete', 'add', 'check', 'verify', 'validate', 'optimize', 'refactor', 'enhance', 'improve', 'send', 'email', 'help', 'updated', 'fixed', 'created', 'built', 'added'];
+  const actionVerbs = [
+    'test',
+    'rename',
+    'fix',
+    'debug',
+    'research',
+    'write',
+    'create',
+    'make',
+    'build',
+    'implement',
+    'analyze',
+    'review',
+    'update',
+    'modify',
+    'generate',
+    'develop',
+    'design',
+    'deploy',
+    'configure',
+    'setup',
+    'install',
+    'remove',
+    'delete',
+    'add',
+    'check',
+    'verify',
+    'validate',
+    'optimize',
+    'refactor',
+    'enhance',
+    'improve',
+    'send',
+    'email',
+    'help',
+    'updated',
+    'fixed',
+    'created',
+    'built',
+    'added',
+  ];
 
-  let titleWords = [];
+  const titleWords = [];
 
   // Check for action verb
   for (const verb of actionVerbs) {
@@ -54,8 +160,9 @@ function generateTabTitle(prompt: string, completedLine?: string): string {
       if (verb === 'write') pastTense = 'Wrote';
       else if (verb === 'make') pastTense = 'Made';
       else if (verb === 'send') pastTense = 'Sent';
-      else if (verb.endsWith('e')) pastTense = verb.charAt(0).toUpperCase() + verb.slice(1, -1) + 'ed';
-      else pastTense = verb.charAt(0).toUpperCase() + verb.slice(1) + 'ed';
+      else if (verb.endsWith('e'))
+        pastTense = `${verb.charAt(0).toUpperCase() + verb.slice(1, -1)}ed`;
+      else pastTense = `${verb.charAt(0).toUpperCase() + verb.slice(1)}ed`;
 
       titleWords.push(pastTense);
       break;
@@ -64,8 +171,8 @@ function generateTabTitle(prompt: string, completedLine?: string): string {
 
   // Add most meaningful remaining words
   const remainingWords = words
-    .filter(word => !actionVerbs.includes(word.toLowerCase()))
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
+    .filter((word) => !actionVerbs.includes(word.toLowerCase()))
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase());
 
   // Fill up to 4 words total
   for (const word of remainingWords) {
@@ -105,8 +212,8 @@ function setTerminalTabTitle(title: string): void {
   if (term.includes('ghostty')) {
     // Ghostty-specific sequences
     // Ghostty uses standard xterm sequences but may need different approach
-    process.stderr.write(`\x1b]2;${title}\x07`);  // Window title
-    process.stderr.write(`\x1b]0;${title}\x07`);  // Icon and window title
+    process.stderr.write(`\x1b]2;${title}\x07`); // Window title
+    process.stderr.write(`\x1b]0;${title}\x07`); // Icon and window title
 
     // Try OSC 7 for Ghostty tab titles (some terminals use this)
     process.stderr.write(`\x1b]7;${title}\x07`);
@@ -117,11 +224,11 @@ function setTerminalTabTitle(title: string): void {
     // Kitty-specific sequences
     process.stderr.write(`\x1b]0;${title}\x07`);
     process.stderr.write(`\x1b]2;${title}\x07`);
-    process.stderr.write(`\x1b]30;${title}\x07`);  // Kitty-specific
+    process.stderr.write(`\x1b]30;${title}\x07`); // Kitty-specific
   } else {
     // Generic sequences for other terminals
-    process.stderr.write(`\x1b]0;${title}\x07`);  // Icon and window
-    process.stderr.write(`\x1b]2;${title}\x07`);  // Window title
+    process.stderr.write(`\x1b]0;${title}\x07`); // Icon and window
+    process.stderr.write(`\x1b]2;${title}\x07`); // Window title
   }
 
   // Flush stderr to ensure immediate output
@@ -164,27 +271,76 @@ function contentToText(content: any): string {
 // Load voices configuration
 let VOICE_CONFIG: VoicesConfig;
 try {
-  const voicesPath = join(homedir(), 'Library/Mobile Documents/com~apple~CloudDocs/Claude/voice-server/voices.json');
+  const voicesPath = join(
+    homedir(),
+    'Library/Mobile Documents/com~apple~CloudDocs/Claude/voice-server/voices.json'
+  );
   VOICE_CONFIG = JSON.parse(readFileSync(voicesPath, 'utf-8'));
-} catch (e) {
+} catch (_e) {
   // Fallback to hardcoded config if file doesn't exist
   console.error('⚠️ Could not load voices.json, using fallback config');
   VOICE_CONFIG = {
     default_rate: 175,
     voices: {
-      kai: { voice_name: "Jamie (Premium)", rate_wpm: 263, rate_multiplier: 1.5, description: "UK Male", type: "Premium" },
-      researcher: { voice_name: "Ava (Premium)", rate_wpm: 236, rate_multiplier: 1.35, description: "US Female", type: "Premium" },
-      engineer: { voice_name: "Tom (Enhanced)", rate_wpm: 236, rate_multiplier: 1.35, description: "US Male", type: "Enhanced" },
-      architect: { voice_name: "Serena (Premium)", rate_wpm: 236, rate_multiplier: 1.35, description: "UK Female", type: "Premium" },
-      designer: { voice_name: "Isha (Premium)", rate_wpm: 236, rate_multiplier: 1.35, description: "Indian Female", type: "Premium" },
-      pentester: { voice_name: "Oliver (Enhanced)", rate_wpm: 236, rate_multiplier: 1.35, description: "UK Male", type: "Enhanced" },
-      writer: { voice_name: "Samantha (Enhanced)", rate_wpm: 236, rate_multiplier: 1.35, description: "US Female", type: "Enhanced" }
-    }
+      marvin: {
+        voice_id: 'onwK4e9ZLuTAKqWW03F9',
+        rate_wpm: 263,
+        rate_multiplier: 1.5,
+        description: 'Default DA voice',
+        type: 'Free',
+      },
+      researcher: {
+        voice_name: 'Ava (Premium)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'US Female',
+        type: 'Premium',
+      },
+      engineer: {
+        voice_name: 'Tom (Enhanced)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'US Male',
+        type: 'Enhanced',
+      },
+      architect: {
+        voice_name: 'Serena (Premium)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'UK Female',
+        type: 'Premium',
+      },
+      designer: {
+        voice_name: 'Isha (Premium)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'Indian Female',
+        type: 'Premium',
+      },
+      pentester: {
+        voice_name: 'Oliver (Enhanced)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'UK Male',
+        type: 'Enhanced',
+      },
+      writer: {
+        voice_name: 'Samantha (Enhanced)',
+        rate_wpm: 236,
+        rate_multiplier: 1.35,
+        description: 'US Female',
+        type: 'Enhanced',
+      },
+    },
   };
 }
 
 // Intelligent response generator - prioritizes custom COMPLETED messages
-function generateIntelligentResponse(userQuery: string, assistantResponse: string, completedLine: string): string {
+function generateIntelligentResponse(
+  userQuery: string,
+  assistantResponse: string,
+  completedLine: string
+): string {
   // Clean the completed line
   const cleanCompleted = completedLine
     .replace(/\*+/g, '')
@@ -198,12 +354,12 @@ function generateIntelligentResponse(userQuery: string, assistantResponse: strin
     'done successfully',
     'finished successfully',
     'completed the task',
-    'completed your request'
+    'completed your request',
   ];
 
-  const isGenericCompleted = genericPhrases.some(phrase =>
-    cleanCompleted.toLowerCase() === phrase ||
-    cleanCompleted.toLowerCase() === `${phrase}.`
+  const isGenericCompleted = genericPhrases.some(
+    (phrase) =>
+      cleanCompleted.toLowerCase() === phrase || cleanCompleted.toLowerCase() === `${phrase}.`
   );
 
   // If we have a custom, non-generic completed message, prefer it
@@ -212,7 +368,7 @@ function generateIntelligentResponse(userQuery: string, assistantResponse: strin
   }
 
   // Extract key information from the full response
-  const responseLC = assistantResponse.toLowerCase();
+  const _responseLC = assistantResponse.toLowerCase();
   const queryLC = userQuery.toLowerCase();
 
   // Only apply shortcuts for very specific simple cases
@@ -224,7 +380,9 @@ function generateIntelligentResponse(userQuery: string, assistantResponse: strin
 
   // Simple math calculations - ONLY if it's just a calculation
   if (queryLC.match(/^\s*\d+\s*[\+\-\*\/]\s*\d+\s*\??$/)) {
-    const resultMatch = assistantResponse.match(/=\s*(-?\d+(?:\.\d+)?)|(?:equals?|is)\s+(-?\d+(?:\.\d+)?)/i);
+    const resultMatch = assistantResponse.match(
+      /=\s*(-?\d+(?:\.\d+)?)|(?:equals?|is)\s+(-?\d+(?:\.\d+)?)/i
+    );
     if (resultMatch) {
       return resultMatch[1] || resultMatch[2];
     }
@@ -276,7 +434,7 @@ async function main() {
     process.exit(0);
   }
 
-  let transcriptPath;
+  let transcriptPath: string | undefined;
   try {
     const parsed = JSON.parse(input);
     transcriptPath = parsed.transcript_path;
@@ -292,7 +450,7 @@ async function main() {
   }
 
   // Read the transcript
-  let transcript;
+  let transcript: string;
   try {
     transcript = readFileSync(transcriptPath, 'utf-8');
     console.error(`📜 Transcript loaded: ${transcript.split('\n').length} lines`);
@@ -324,7 +482,7 @@ async function main() {
         }
         if (lastUserQuery) break;
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip invalid JSON
     }
   }
@@ -341,12 +499,14 @@ async function main() {
 
       if (entry.type === 'assistant' && entry.message?.content) {
         // Check if this assistant message contains a Task tool_use
-        let foundTask = false;
-        const contentArray = Array.isArray(entry.message.content) ? entry.message.content : [entry.message.content];
+        let _foundTask = false;
+        const contentArray = Array.isArray(entry.message.content)
+          ? entry.message.content
+          : [entry.message.content];
         for (const content of contentArray) {
           if (content?.type === 'tool_use' && content.name === 'Task') {
             // This is an agent task - find its result
-            foundTask = true;
+            _foundTask = true;
             agentType = content.input?.subagent_type || '';
 
             // Find the corresponding tool_result
@@ -357,7 +517,10 @@ async function main() {
                   ? resultEntry.message.content
                   : [resultEntry.message.content];
                 for (const resultContent of resultContentArray) {
-                  if (resultContent?.type === 'tool_result' && resultContent.tool_use_id === content.id) {
+                  if (
+                    resultContent?.type === 'tool_result' &&
+                    resultContent.tool_use_id === content.id
+                  ) {
                     taskResult = contentToText(resultContent.content);
                     isAgentTask = true;
                     break;
@@ -373,17 +536,17 @@ async function main() {
         // We found the last assistant message, stop looking
         break;
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip invalid JSON
     }
   }
 
   // Generate the announcement
   let message = '';
-  let voiceConfig = VOICE_CONFIG.voices.kai; // Default to Kai's voice config
-  let kaiHasCustomCompleted = false;
+  let voiceConfig = VOICE_CONFIG.voices.marvin; // Default to Marvin's voice config
+  let _marvinHasCustomCompleted = false;
 
-  // ALWAYS check Kai's response FIRST (even when agents are used)
+  // ALWAYS check Marvin's response FIRST (even when agents are used)
   const lastResponse = lines[lines.length - 1];
   try {
     const entry = JSON.parse(lastResponse);
@@ -395,7 +558,8 @@ async function main() {
 
       if (customCompletedMatch) {
         // Get the custom voice response
-        let customText = customCompletedMatch[1].trim()
+        const customText = customCompletedMatch[1]
+          .trim()
           .replace(/\[.*?\]/g, '') // Remove bracketed text like [Optional: ...]
           .replace(/\*+/g, '') // Remove asterisks
           .trim();
@@ -404,15 +568,15 @@ async function main() {
         const wordCount = customText.split(/\s+/).length;
         if (customText && wordCount <= 8) {
           message = customText;
-          kaiHasCustomCompleted = true;
-          console.error(`🗣️ KAI CUSTOM VOICE: ${message}`);
+          _marvinHasCustomCompleted = true;
+          console.error(`🗣️ MARVIN CUSTOM VOICE: ${message}`);
         } else {
           // Custom completed too long, fall back to regular COMPLETED
           const completedMatch = content.match(/🎯\s*COMPLETED:\s*(.+?)(?:\n|$)/im);
           if (completedMatch) {
-            let completedText = completedMatch[1].trim();
+            const completedText = completedMatch[1].trim();
             message = generateIntelligentResponse(lastUserQuery, content, completedText);
-            console.error(`🎯 KAI FALLBACK (custom too long): ${message}`);
+            console.error(`🎯 MARVIN FALLBACK (custom too long): ${message}`);
           }
         }
       } else if (!isAgentTask) {
@@ -421,12 +585,12 @@ async function main() {
 
         if (completedMatch) {
           // Get the raw text after the colon
-          let completedText = completedMatch[1].trim();
+          const completedText = completedMatch[1].trim();
 
           // Generate intelligent response
           message = generateIntelligentResponse(lastUserQuery, content, completedText);
 
-          console.error(`🎯 KAI INTELLIGENT: ${message}`);
+          console.error(`🎯 MARVIN INTELLIGENT: ${message}`);
         } else {
           // No COMPLETED line found - don't send anything
           console.error('⚠️ No COMPLETED line found');
@@ -434,17 +598,18 @@ async function main() {
       }
     }
   } catch (e) {
-    console.error('⚠️ Error parsing Kai response:', e);
+    console.error('⚠️ Error parsing Marvin response:', e);
   }
 
-  // If Kai didn't provide a CUSTOM COMPLETED and an agent was used, check agent's response
+  // If Marvin didn't provide a CUSTOM COMPLETED and an agent was used, check agent's response
   if (!message && isAgentTask && taskResult) {
     // First, try to find CUSTOM COMPLETED line in agent response
     const customCompletedMatch = taskResult.match(/🗣️\s*CUSTOM\s+COMPLETED:\s*(.+?)(?:\n|$)/im);
 
     if (customCompletedMatch) {
       // Get the custom voice response
-      let customText = customCompletedMatch[1].trim()
+      const customText = customCompletedMatch[1]
+        .trim()
         .replace(/\[.*?\]/g, '') // Remove bracketed text
         .replace(/\*+/g, '') // Remove asterisks
         .replace(/\[AGENT:\w+\]\s*/i, '') // Remove agent tags
@@ -454,18 +619,19 @@ async function main() {
       const wordCount = customText.split(/\s+/).length;
       if (customText && wordCount <= 8) {
         message = customText;
-        voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.kai;
+        voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.marvin;
         console.error(`🗣️ AGENT CUSTOM VOICE (fallback): ${message}`);
       } else {
         // Custom completed too long, fall back to regular COMPLETED
         const completedMatch = taskResult.match(/🎯\s*COMPLETED:\s*(.+?)$/im);
         if (completedMatch) {
-          let completedText = completedMatch[1].trim()
+          const completedText = completedMatch[1]
+            .trim()
             .replace(/\*+/g, '')
             .replace(/\[AGENT:\w+\]\s*/i, '')
             .trim();
           message = generateIntelligentResponse(lastUserQuery, taskResult, completedText);
-          voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.kai;
+          voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.marvin;
           console.error(`🎯 AGENT FALLBACK (custom too long): ${message}`);
         }
       }
@@ -479,13 +645,13 @@ async function main() {
 
         // Remove markdown formatting
         completedText = completedText
-          .replace(/\*+/g, '')  // Remove asterisks
+          .replace(/\*+/g, '') // Remove asterisks
           .replace(/\[AGENT:\w+\]\s*/i, '') // Remove agent tags
           .trim();
 
         // Generate intelligent response for agent tasks
         message = generateIntelligentResponse(lastUserQuery, taskResult, completedText);
-        voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.kai;
+        voiceConfig = VOICE_CONFIG.voices[agentType.toLowerCase()] || VOICE_CONFIG.voices.marvin;
 
         console.error(`🎯 AGENT INTELLIGENT (fallback): ${message}`);
       }
@@ -509,10 +675,12 @@ async function main() {
         voice_id: voiceId,
         // keep legacy fields for compatibility with voice server configs that use names/rates
         voice_name: voiceConfig.voice_name,
-        rate: voiceConfig.rate_wpm
-      })
+        rate: voiceConfig.rate_wpm,
+      }),
     }).catch(() => {});
-    console.error(`🔊 Voice notification sent: "${message}" with voice: ${voiceConfig.voice_name} at ${voiceConfig.rate_wpm} wpm (${voiceConfig.rate_multiplier}x)`);
+    console.error(
+      `🔊 Voice notification sent: "${message}" with voice: ${voiceConfig.voice_name} at ${voiceConfig.rate_wpm} wpm (${voiceConfig.rate_multiplier}x)`
+    );
   }
 
   // ALWAYS set tab title to override any previous titles (like "dynamic requirements")
@@ -529,13 +697,14 @@ async function main() {
         const content = contentToText(entry.message.content);
         const completedMatch = content.match(/🎯\s*COMPLETED:\s*(.+?)(?:\n|$)/im);
         if (completedMatch) {
-          tabTitle = completedMatch[1].trim()
+          tabTitle = completedMatch[1]
+            .trim()
             .replace(/\*+/g, '')
             .replace(/\[.*?\]/g, '')
             .trim();
         }
       }
-    } catch (e) {}
+    } catch (_e) {}
 
     // Fall back to generating a title from the user query
     if (!tabTitle) {
@@ -550,7 +719,7 @@ async function main() {
       const escapedTitle = tabTitle.replace(/'/g, "'\\''");
 
       // Use printf command to set the tab title - this works in Kitty
-      const { execSync } = await import('child_process');
+      const { execSync } = await import('node:child_process');
       execSync(`printf '\\033]0;${escapedTitle}\\007' >&2`);
       execSync(`printf '\\033]2;${escapedTitle}\\007' >&2`);
       execSync(`printf '\\033]30;${escapedTitle}\\007' >&2`);
@@ -562,7 +731,7 @@ async function main() {
   }
 
   console.error(`📝 User query: ${lastUserQuery || 'No query found'}`);
-  console.error(`✅ Message: ${message || 'No completion message'}`)
+  console.error(`✅ Message: ${message || 'No completion message'}`);
 
   // Final tab title override as the very last action - use the actual completion message
   if (message) {

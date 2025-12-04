@@ -213,7 +213,7 @@ CRITICAL REQUIREMENTS:
 - Strategic color (not every annotation needs color)
 - No gradients on annotations
 
-Optional: Sign "Kai" small in bottom corner in charcoal (#2D2D2D).
+Optional: Sign "{{DA}}" small in bottom corner in charcoal (#2D2D2D).
 ```
 
 ### Alternative: Composite Workflow
@@ -248,7 +248,7 @@ If generating combined image is difficult:
 
 **Option A: Generate combined (if model supports):**
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --reference-image /path/to/screenshot.png \
   --prompt "[ANNOTATION PROMPT]" \

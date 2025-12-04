@@ -240,7 +240,7 @@ CRITICAL REQUIREMENTS:
 - Immediate visual understanding of the difference
 - Equal visual weight to both sides (balanced composition)
 
-Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
+Sign "{{DA}}" small in bottom right corner in charcoal (#2D2D2D).
 ```
 
 ---
@@ -261,7 +261,7 @@ Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
 ### Step 5: Execute Generation
 
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --prompt "[YOUR PROMPT]" \
   --size 2K \

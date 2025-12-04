@@ -7,8 +7,8 @@
  * for later processing and analysis.
  */
 
-import { appendFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { PAI_DIR } from './lib/pai-paths';
 
 interface ToolUseData {
@@ -51,13 +51,13 @@ async function main() {
 
     // Format output as JSONL (one JSON object per line)
     const captureFile = join(dateDir, `${today}_tool-outputs.jsonl`);
-    const captureEntry = JSON.stringify({
+    const captureEntry = `${JSON.stringify({
       timestamp: data.timestamp || now.toISOString(),
       tool: data.tool_name,
       input: data.tool_input,
       output: data.tool_response,
-      session: data.conversation_id
-    }) + '\n';
+      session: data.conversation_id,
+    })}\n`;
 
     // Append to daily log
     appendFileSync(captureFile, captureEntry);

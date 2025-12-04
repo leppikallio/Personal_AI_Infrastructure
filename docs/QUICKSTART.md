@@ -4,71 +4,90 @@
 
 ---
 
+## Prerequisites (1 minute)
+
+### Install Bun
+
+```bash
+# Install Bun (PAI's package manager)
+curl -fsSL https://bun.sh/install | bash
+
+# Restart your terminal or source your profile
+source ~/.bashrc  # or ~/.zshrc
+```
+
+### Install Claude Code
+
+Follow the installation instructions at [code.claude.com](https://code.claude.com)
+
+---
+
 ## Installation (2 minutes)
 
 ### 1. Clone PAI
 
 ```bash
-git clone https://github.com/danielmiessler/Personal_AI_Infrastructure.git
+git clone https://github.com/leppikallio/Personal_AI_Infrastructure.git
 cd Personal_AI_Infrastructure
+
+# Initialize submodules (required for Fabric patterns)
+git submodule update --init --recursive
 ```
 
-### 2. Run the Setup Wizard
-
-```bash
-.claude/tools/setup/bootstrap.sh
-```
-
-The bootstrap script handles everything:
-- **Shell check** — Recommends zsh or bash if you're using something else
-- **Bun install** — Offers to install Bun if not found (PAI's package manager)
-- **Claude Code check** — Reminds you to install Claude Code if missing
-- **Setup wizard** — Launches the interactive configuration
-
-The interactive wizard will configure everything for you:
-
-- **PAI Directory** — Where to install (default: `~/.claude`)
-- **Your Name** — Auto-detected from git config
-- **Your Email** — Auto-detected from git config
-- **Assistant Name** — Name your AI (default: "Kai")
-- **Color Theme** — Choose blue, purple, green, cyan, or red
-- **Voice Server** — Enable text-to-speech (macOS only)
-- **Shell Profile** — Add PAI environment variables
-
-#### Non-Interactive Mode (for automation)
-
-```bash
-bun run setup.ts \
-  --pai-dir ~/.claude \
-  --name "Your Name" \
-  --email you@example.com \
-  --assistant-name "Kai" \
-  --force
-```
-
-#### Dry Run (preview changes)
-
-```bash
-bun run setup.ts --dry-run
-```
-
-### 3. Add Your API Keys
+### 2. Configure Environment
 
 ```bash
 # Copy environment template
-cp ~/.claude/.env.example ~/.claude/.env
+cp .claude/.env.example .claude/.env
 
 # Edit with your API keys
-nano ~/.claude/.env
+nano .claude/.env  # or use your preferred editor
 
 # Required: ANTHROPIC_API_KEY
-# Optional: ELEVENLABS_API_KEY for voice
+# Optional: Add other API keys for specific skills
 ```
 
-### 4. Reload Your Shell
+### 3. Configure PAI_DIR
 
+Edit `.claude/settings.json` and set `PAI_DIR` to your actual path:
+
+```json
+"env": {
+  "PAI_DIR": "/Users/yourname/.claude",  // <- Change this!
+  ...
+}
+```
+
+**Examples:**
+- macOS: `"/Users/john/.claude"`
+- Linux: `"/home/john/.claude"`
+- Custom location: `"/opt/pai"` (if you want PAI elsewhere)
+
+### 4. Install to Your System
+
+**Option A: Copy (recommended for beginners)**
 ```bash
-source ~/.zshrc  # or ~/.bashrc
+# Copy .claude directory to home
+cp -r .claude ~/.claude
+```
+
+**Option B: Symlink (for development)**
+```bash
+# Symlink for live updates
+ln -s $(pwd)/.claude ~/.claude
+```
+
+### 5. Add PAI_DIR to Shell (Optional but Recommended)
+
+Add to your `~/.zshrc` or `~/.bashrc`:
+```bash
+export PAI_DIR="$HOME/.claude"
+```
+
+Or copy the provided aliases:
+```bash
+cat .claude/zshrc-aliases >> ~/.zshrc
+source ~/.zshrc
 ```
 
 ---
@@ -228,6 +247,9 @@ ls -la ${PAI_DIR}/.env
 ```bash
 cd ~/Personal_AI_Infrastructure  # or wherever you cloned
 git pull origin main
+
+# Update submodules (Fabric patterns, etc.)
+git submodule update --init --recursive
 
 # Copy updates to your system
 cp -r .claude/* ${PAI_DIR}/

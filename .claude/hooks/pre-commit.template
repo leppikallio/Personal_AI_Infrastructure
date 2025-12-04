@@ -3,7 +3,7 @@
 # PAI Pre-Commit Hook
 #
 # Automatically validates protected files before allowing commits.
-# This prevents accidentally committing Kai-specific content to public PAI.
+# This prevents accidentally committing Marvin-specific content to public PAI.
 #
 # Installation:
 #   cp .claude/hooks/pre-commit.template .git/hooks/pre-commit

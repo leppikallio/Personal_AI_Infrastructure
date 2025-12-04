@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# PAI Pre-commit Hook
+# Runs lint-staged for formatting/linting and gitleaks for secret scanning
+
+echo "Running pre-commit checks..."
+
+# Check if any submodules are being committed (stash conflicts with submodules)
+if git diff --cached --diff-filter=d --name-only | grep -q "^\.claude/skills/fabric/fabric-repo$"; then
+  echo "Submodule changes detected, using --no-stash mode..."
+  LINT_STAGED_OPTS="--no-stash"
+else
+  LINT_STAGED_OPTS=""
+fi
+
+# Run lint-staged (includes biome + gitleaks via lint-staged config)
+bunx lint-staged $LINT_STAGED_OPTS
+
+# Run PAI protected files validator on staged files
+bun .claude/hooks/validate-protected.ts --staged

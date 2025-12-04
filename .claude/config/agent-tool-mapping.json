@@ -1,0 +1,46 @@
+{
+  "$schema": "agent-tool-mapping-schema.json",
+  "version": "1.0.0",
+  "description": "Agent tool constraints for research commands (AD-007)",
+  "agents": {
+    "claude-researcher": {
+      "primaryTool": "WebSearch",
+      "primaryCommand": null,
+      "forbidden": [],
+      "fallbackChain": ["Apify", "Brightdata"],
+      "stopOnFailure": false,
+      "promptBlock": "**YOUR PRIMARY RESEARCH TOOL:** WebSearch (Claude's native capability)\n**YOUR TASK:** Use WebSearch to investigate your assigned perspective.\n**FALLBACK CHAIN:** If WebSearch insufficient → Apify → Brightdata"
+    },
+    "gemini-researcher": {
+      "primaryTool": "Gemini OAuth CLI",
+      "primaryCommand": "~/.claude/agents/clients/gemini-oauth/gemini-oauth -s \"[query]\"",
+      "forbidden": ["WebSearch", "WebFetch", "Brightdata", "Apify"],
+      "fallbackChain": [],
+      "stopOnFailure": true,
+      "promptBlock": "**YOUR PRIMARY RESEARCH TOOL:** Gemini OAuth CLI with Google Search grounding\n**COMMAND:** ~/.claude/agents/clients/gemini-oauth/gemini-oauth -s \"[query]\"\n**YOUR TASK:** Use the Gemini OAuth CLI to investigate your assigned perspective.\n**NO FALLBACK:** If Gemini CLI fails, STOP and report error. Do NOT use WebSearch.\n**FORBIDDEN:** WebSearch, WebFetch, Brightdata, Apify"
+    },
+    "grok-researcher": {
+      "primaryTool": "Grok CLI",
+      "primaryCommand": "$HOME/.bun/bin/grok -p \"[query]\" -m \"$GROK_MODEL\"",
+      "forbidden": ["WebSearch", "WebFetch", "Brightdata", "Apify"],
+      "fallbackChain": [],
+      "stopOnFailure": true,
+      "promptBlock": "**YOUR PRIMARY RESEARCH TOOL:** Grok CLI\n**COMMAND:** $HOME/.bun/bin/grok -p \"[query]\" -m \"$GROK_MODEL\"\n**YOUR TASK:** Use the Grok CLI to investigate your assigned perspective.\n**NO FALLBACK:** If Grok CLI fails, STOP and report error. Do NOT use WebSearch.\n**FORBIDDEN:** WebSearch, WebFetch, Brightdata, Apify"
+    },
+    "perplexity-researcher": {
+      "primaryTool": "Perplexity CLI",
+      "primaryCommand": "${PAI_DIR}/agents/clients/perplexity -c -m \"${PERPLEXITY_MODEL:-sonar-pro}\" \"[query]\"",
+      "forbidden": ["WebSearch", "WebFetch"],
+      "fallbackChain": [],
+      "stopOnFailure": true,
+      "promptBlock": "**YOUR PRIMARY RESEARCH TOOL:** Perplexity CLI with citations\n**COMMAND:** ${PAI_DIR}/agents/clients/perplexity -c -m \"${PERPLEXITY_MODEL:-sonar-pro}\" \"[query]\"\n**YOUR TASK:** Use the Perplexity CLI to investigate your assigned perspective.\n**NO FALLBACK:** If Perplexity CLI fails, STOP and report error. Do NOT use WebSearch.\n**FORBIDDEN:** WebSearch, WebFetch"
+    }
+  },
+  "toolConflictPatterns": [
+    "CONSTITUTIONAL VIOLATION",
+    "FORBIDDEN",
+    "constitutional requirements",
+    "tool conflict",
+    "cannot use WebSearch"
+  ]
+}

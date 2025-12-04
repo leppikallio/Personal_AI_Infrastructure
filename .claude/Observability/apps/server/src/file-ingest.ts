@@ -35,7 +35,7 @@ const sessionTodos = new Map<string, any[]>();
  * Get the path to today's all-events file
  */
 function getTodayEventsFile(): string {
-  const paiDir = join(homedir(), '.claude');
+  const paiDir = process.env.PAI_DIR || join(homedir(), '.claude');
   const now = new Date();
   // Convert to PST
   const pstDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
@@ -285,7 +285,7 @@ function watchFile(filePath: string): void {
  */
 export function startFileIngestion(callback?: (events: HookEvent[]) => void): void {
   console.log('🚀 Starting file-based event streaming (in-memory only)');
-  console.log('📂 Reading from ~/.claude/history/raw-outputs/');
+  console.log('📂 Reading from ${PAI_DIR}/history/raw-outputs/');
 
   // Set the callback for event notifications
   if (callback) {

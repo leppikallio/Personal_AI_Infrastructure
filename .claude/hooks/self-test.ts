@@ -3,7 +3,7 @@
  * PAI Self-Test - Health Check System
  *
  * Validates that PAI core guarantees are working correctly.
- * Run: bun ${PAI_DIR}/hooks/self-test.ts
+ * Run: bun ~/.claude/hooks/self-test.ts
  *
  * Tests:
  * 1. PAI_DIR resolves correctly
@@ -15,11 +15,11 @@
  * 7. Voice server (optional)
  */
 
-import { existsSync, readFileSync, accessSync, constants, readdirSync, statSync } from 'fs';
-import { join, resolve, dirname } from 'path';
+import { constants, accessSync, existsSync, readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 
 // For self-test, always use the repo we're testing (not system PAI_DIR)
-// This allows testing the PAI repo independently of installed Kai system
+// This allows testing the PAI repo independently of installed Marvin system
 // Use cwd() since the user runs this from the PAI repo root: cd ~/Projects/PAI && bun .claude/hooks/self-test.ts
 const REPO_ROOT = process.cwd();
 const PAI_DIR = join(REPO_ROOT, '.claude');
@@ -36,7 +36,12 @@ interface TestResult {
 
 const results: TestResult[] = [];
 
-function test(name: string, testFn: () => boolean | 'warn', passMsg: string, failMsg: string): void {
+function test(
+  name: string,
+  testFn: () => boolean | 'warn',
+  passMsg: string,
+  failMsg: string
+): void {
   try {
     const result = testFn();
     if (result === 'warn') {
@@ -50,7 +55,7 @@ function test(name: string, testFn: () => boolean | 'warn', passMsg: string, fai
     results.push({
       name,
       status: 'fail',
-      message: `${failMsg}: ${error instanceof Error ? error.message : String(error)}`
+      message: `${failMsg}: ${error instanceof Error ? error.message : String(error)}`,
     });
   }
 }
@@ -115,7 +120,7 @@ test(
     const settingsPath = join(PAI_DIR, 'settings.json');
     if (!existsSync(settingsPath)) return false;
     const settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    return settings && settings.hooks && settings.permissions;
+    return settings?.hooks && settings.permissions;
   },
   'settings.json valid',
   'settings.json missing or invalid'
@@ -125,10 +130,10 @@ test(
 test(
   'Agents',
   () => {
-    const agents = readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md'));
+    const agents = readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md'));
     return agents.length > 0;
   },
-  `Found ${readdirSync(AGENTS_DIR).filter(f => f.endsWith('.md')).length} agent(s)`,
+  `Found ${readdirSync(AGENTS_DIR).filter((f) => f.endsWith('.md')).length} agent(s)`,
   'No agents found'
 );
 
@@ -136,10 +141,7 @@ test(
 test(
   'Hook Executability',
   () => {
-    const criticalHooks = [
-      'capture-all-events.ts',
-      'load-core-context.ts',
-    ];
+    const criticalHooks = ['capture-all-events.ts', 'load-core-context.ts'];
 
     for (const hook of criticalHooks) {
       const hookPath = join(HOOKS_DIR, hook);
@@ -175,7 +177,7 @@ test(
   async () => {
     try {
       const response = await fetch('http://localhost:3000/health', {
-        signal: AbortSignal.timeout(2000)
+        signal: AbortSignal.timeout(2000),
       });
       return response.ok;
     } catch {
@@ -218,7 +220,8 @@ let warnCount = 0;
 
 for (const result of results) {
   const icon = result.status === 'pass' ? '✅' : result.status === 'warn' ? '⚠️ ' : '❌';
-  const color = result.status === 'pass' ? '\x1b[32m' : result.status === 'warn' ? '\x1b[33m' : '\x1b[31m';
+  const color =
+    result.status === 'pass' ? '\x1b[32m' : result.status === 'warn' ? '\x1b[33m' : '\x1b[31m';
   const reset = '\x1b[0m';
 
   console.log(`${icon} ${color}${result.name}${reset}: ${result.message}`);
@@ -228,7 +231,7 @@ for (const result of results) {
   else warnCount++;
 }
 
-console.log('\n' + '='.repeat(60));
+console.log(`\n${'='.repeat(60)}`);
 console.log(`\n📊 Results: ${passCount} passed, ${failCount} failed, ${warnCount} warnings\n`);
 
 if (failCount === 0) {
@@ -241,6 +244,6 @@ if (failCount === 0) {
   console.log('🔧 PAI has issues. Check failed tests above.\n');
   console.log('📖 See PAI_CONTRACT.md for what should work out of box.\n');
   console.log('🐛 Report core guarantee failures at:');
-  console.log('   https://github.com/danielmiessler/Personal_AI_Infrastructure/issues\n');
+  console.log('   https://github.com/leppikallio/Personal_AI_Infrastructure/issues\n');
   process.exit(1);
 }

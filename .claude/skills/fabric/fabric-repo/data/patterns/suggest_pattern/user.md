@@ -196,6 +196,10 @@ Review contract to identify stipulations, issues, and changes for negotiation.
 
 Create comparisons table, highlighting key differences and similarities.
 
+### concall_summary
+
+Analyze earnings call transcripts to extract management insights, financial metrics, and investment implications.
+
 ### create_ai_jobs_analysis
 
 Identify automation risks and career resilience strategies.
@@ -295,6 +299,14 @@ Extract/analyze user job stories to understand motivations.
 ### label_and_rate
 
 Categorize/evaluate content by assigning labels and ratings.
+
+### model_as_sherlock_freud
+
+Builds psychological models using detective reasoning and psychoanalytic insight.
+
+### predict_person_actions
+
+Predicts behavioral responses based on psychological profiles and challenges
 
 ### prepare_7s_strategy
 
@@ -598,6 +610,10 @@ Transform technical docs into clearer explanations with examples.
 
 Create glossaries of advanced terms with definitions and analogies.
 
+### fix_typos
+
+Proofreads and corrects typos, spelling, grammar, and punctuation errors.
+
 ### humanize
 
 Transform technical content into approachable language.
@@ -880,6 +896,10 @@ Convert content into flashcard format for learning.
 
 ## VISUALIZATION PATTERNS
 
+### create_conceptmap
+
+Transform unstructured text or markdown content into interactive HTML concept maps using Vis.js by extracting key concepts and their logical relationships.
+
 ### create_excalidraw_visualization
 
 Create visualizations using Excalidraw.
@@ -925,10 +945,6 @@ Convert content to markdown, preserving original content and structure.
 ### export_data_as_csv
 
 Extract data and convert to CSV, preserving data integrity.
-
-### get_youtube_rss
-
-Generate RSS feed URLs for YouTube channels.
 
 ### sanitize_broken_html_to_markdown
 
@@ -983,3 +999,9 @@ Summarize RPG sessions capturing events, combat, and narrative.
 ### extract_jokes
 
 Extract/categorize jokes, puns, and witty remarks.
+
+## WELLNESS PATTERNS
+
+### recommend_yoga_practice
+
+Provides personalized yoga sequences, meditation guidance, and holistic lifestyle advice based on individual profiles.

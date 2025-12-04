@@ -1,0 +1,92 @@
+{
+  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
+  "organizeImports": {
+    "enabled": true
+  },
+  "files": {
+    "include": [
+      ".claude/**/*.ts",
+      ".claude/**/*.tsx",
+      ".claude/**/*.js",
+      ".claude/**/*.jsx",
+      ".claude/**/*.json"
+    ],
+    "ignore": [
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/.git/**",
+      "**/bun.lockb",
+      "**/bun.lock",
+      "**/*.min.js",
+      ".claude/history/**",
+      ".claude/scratchpad/**",
+      ".claude/plans/**",
+      ".claude/todos/**",
+      ".claude/debug/**",
+      ".claude/file-history/**",
+      ".claude/session-env/**",
+      ".claude/shell-snapshots/**",
+      ".claude/statsig/**",
+      ".claude/projects/**",
+      ".claude/plugins/**",
+      ".claude/ide/**",
+      ".claude/skills/fabric/fabric-repo/**",
+      ".claude/skills/observability/**",
+      ".claude/Observability/**",
+      ".claude/agent-sessions.json"
+    ],
+    "ignoreUnknown": true
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "warn",
+        "noUnusedImports": "warn",
+        "useExhaustiveDependencies": "off"
+      },
+      "suspicious": {
+        "noExplicitAny": "warn",
+        "noConsoleLog": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "warn",
+        "useConst": "error",
+        "noParameterAssign": "warn"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "error"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": {
+          "level": "warn",
+          "options": {
+            "maxAllowedComplexity": 25
+          }
+        },
+        "noForEach": "warn"
+      }
+    }
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "es5",
+      "semicolons": "always"
+    }
+  },
+  "json": {
+    "formatter": {
+      "trailingCommas": "none"
+    }
+  }
+}

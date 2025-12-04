@@ -3,9 +3,9 @@
  * Backs up files before modification, rolls back on failure
  */
 
-import { existsSync, mkdirSync, copyFileSync, unlinkSync, renameSync } from 'fs';
-import { dirname, join } from 'path';
-import { homedir } from 'os';
+import { copyFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
 
 export interface BackupEntry {
   originalPath: string;

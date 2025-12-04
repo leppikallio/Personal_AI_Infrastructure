@@ -1,0 +1,761 @@
+#!/usr/bin/env bun
+
+/**
+ * Gemini OAuth CLI Client
+ *
+ * Authenticates to Gemini API using OAuth2 "Login with Google" flow,
+ * replicating the exact authentication pattern used by the official Gemini CLI.
+ * Uses the Code Assist API backend.
+ *
+ * Usage:
+ *   gemini-oauth "your prompt"
+ *   gemini-oauth --login           # Force re-authentication
+ *   gemini-oauth --status          # Check auth status
+ *   gemini-oauth -m gemini-2.0-flash "your prompt"
+ */
+
+import { createServer, type Server } from "http";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from "fs";
+import { homedir } from "os";
+import { join } from "path";
+import { OAuth2Client } from "google-auth-library";
+import open from "open";
+import { randomBytes } from "crypto";
+
+// OAuth2 client credentials - loaded from environment
+const OAUTH_CLIENT_ID = process.env.GEMINI_OAUTH_CLIENT_ID || "";
+const OAUTH_CLIENT_SECRET = process.env.GEMINI_OAUTH_CLIENT_SECRET || "";
+
+// OAuth Scopes - exact same as Gemini CLI
+const OAUTH_SCOPES = [
+  "https://www.googleapis.com/auth/cloud-platform",
+  "https://www.googleapis.com/auth/userinfo.email",
+  "https://www.googleapis.com/auth/userinfo.profile",
+];
+
+// Code Assist API endpoint - this is what Gemini CLI uses
+const CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+const CODE_ASSIST_API_VERSION = "v1internal";
+
+// Success/failure redirect URLs from Gemini CLI
+const SIGN_IN_SUCCESS_URL = "https://developers.google.com/gemini-code-assist/auth_success_gemini";
+const SIGN_IN_FAILURE_URL = "https://developers.google.com/gemini-code-assist/auth_failure_gemini";
+
+// Config paths - use same location as Gemini CLI
+const CONFIG_DIR = join(homedir(), ".config", "gemini-oauth");
+const CREDENTIALS_PATH = join(CONFIG_DIR, "credentials.json");
+
+// Parse CLI arguments
+const args = process.argv.slice(2);
+let model = "gemini-2.5-pro";
+let maxTokens = 8192;
+let temperature = 0.7;
+let forceLogin = false;
+let showStatus = false;
+let debug = false;
+let searchEnabled = false;
+let prompt = "";
+
+for (let i = 0; i < args.length; i++) {
+  if (args[i] === "-m" || args[i] === "--model") {
+    model = args[++i];
+  } else if (args[i] === "-t" || args[i] === "--tokens") {
+    maxTokens = parseInt(args[++i]);
+  } else if (args[i] === "--temp" || args[i] === "--temperature") {
+    temperature = parseFloat(args[++i]);
+  } else if (args[i] === "--login") {
+    forceLogin = true;
+  } else if (args[i] === "--status") {
+    showStatus = true;
+  } else if (args[i] === "-d" || args[i] === "--debug") {
+    debug = true;
+  } else if (args[i] === "-s" || args[i] === "--search") {
+    searchEnabled = true;
+  } else if (args[i] === "-h" || args[i] === "--help") {
+    console.log(`Usage: gemini-oauth [options] "prompt"
+
+Options:
+  -m, --model <model>    Model to use (default: gemini-2.5-pro)
+                         Available: gemini-2.5-pro, gemini-2.5-flash
+  -t, --tokens <num>     Max tokens in response (default: 8192)
+  --temp <num>           Temperature 0-2 (default: 0.7)
+  -s, --search           Enable Google Search grounding for up-to-date info
+  --login                Force re-authentication
+  --status               Check authentication status
+  -d, --debug            Show debug information
+  -h, --help             Show this help message
+
+Examples:
+  gemini-oauth "What is TypeScript?"
+  gemini-oauth -m gemini-1.5-pro "Explain quantum computing"
+  gemini-oauth --login
+  gemini-oauth --status
+`);
+    process.exit(0);
+  } else if (!args[i].startsWith("-")) {
+    prompt = args[i];
+  }
+}
+
+interface Credentials {
+  access_token: string;
+  refresh_token?: string;
+  scope?: string;
+  token_type?: string;
+  expiry_date?: number;
+  project_id?: string;
+}
+
+// User-Agent header matching Gemini CLI
+const USER_AGENT = `GeminiOAuthCLI/1.0.0 (${process.platform}; ${process.arch})`;
+
+// Ensure config directory exists
+function ensureConfigDir(): void {
+  if (!existsSync(CONFIG_DIR)) {
+    mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
+  }
+}
+
+// Save credentials to disk with secure permissions
+function saveCredentials(credentials: Credentials): void {
+  ensureConfigDir();
+  writeFileSync(CREDENTIALS_PATH, JSON.stringify(credentials, null, 2));
+  chmodSync(CREDENTIALS_PATH, 0o600);
+  if (debug) {
+    console.error(`Credentials saved to ${CREDENTIALS_PATH}`);
+  }
+}
+
+// Load credentials from disk
+function loadCredentials(): Credentials | null {
+  try {
+    if (existsSync(CREDENTIALS_PATH)) {
+      const data = readFileSync(CREDENTIALS_PATH, "utf-8");
+      return JSON.parse(data);
+    }
+  } catch (e) {
+    console.error("Warning: Failed to load credentials:", e instanceof Error ? e.message : e);
+    if (debug && e instanceof Error) {
+      console.error("Stack:", e.stack);
+    }
+  }
+  return null;
+}
+
+// Create OAuth2 client
+function createOAuthClient(): OAuth2Client {
+  return new OAuth2Client(
+    OAUTH_CLIENT_ID,
+    OAUTH_CLIENT_SECRET,
+    "http://localhost:0/oauth2callback"
+  );
+}
+
+// Perform browser-based OAuth flow - matches Gemini CLI's authWithWeb
+async function performOAuthFlow(client: OAuth2Client): Promise<Credentials> {
+  return new Promise((resolve, reject) => {
+    const state = randomBytes(32).toString("hex");
+
+    // Create local server to receive callback
+    const server: Server = createServer(async (req, res) => {
+      try {
+        const reqUrl = new URL(req.url!, `http://localhost`);
+
+        if (reqUrl.pathname !== "/oauth2callback") {
+          res.writeHead(301, { Location: SIGN_IN_FAILURE_URL });
+          res.end();
+          server.close();
+          reject(new Error("OAuth callback not received. Unexpected request: " + req.url));
+          return;
+        }
+
+        const code = reqUrl.searchParams.get("code");
+        const error = reqUrl.searchParams.get("error");
+        const returnedState = reqUrl.searchParams.get("state");
+
+        if (error) {
+          const errorDescription = reqUrl.searchParams.get("error_description") || "No additional details";
+          res.writeHead(301, { Location: SIGN_IN_FAILURE_URL });
+          res.end();
+          server.close();
+          reject(new Error(`Google OAuth error: ${error}. ${errorDescription}`));
+          return;
+        }
+
+        if (returnedState !== state) {
+          res.writeHead(200, { "Content-Type": "text/plain" });
+          res.end("State mismatch. Possible CSRF attack");
+          server.close();
+          reject(new Error("OAuth state mismatch"));
+          return;
+        }
+
+        if (!code) {
+          res.writeHead(301, { Location: SIGN_IN_FAILURE_URL });
+          res.end();
+          server.close();
+          reject(new Error("No authorization code received"));
+          return;
+        }
+
+        // Get the actual redirect URI used
+        const address = server.address();
+        const port = typeof address === "object" && address ? address.port : 0;
+        const redirectUri = `http://localhost:${port}/oauth2callback`;
+
+        // Exchange code for tokens
+        const { tokens } = await client.getToken({
+          code,
+          redirect_uri: redirectUri,
+        });
+        client.setCredentials(tokens);
+
+        // Redirect to success page
+        res.writeHead(301, { Location: SIGN_IN_SUCCESS_URL });
+        res.end();
+
+        server.close();
+
+        const credentials: Credentials = {
+          access_token: tokens.access_token!,
+          refresh_token: tokens.refresh_token || undefined,
+          scope: tokens.scope || undefined,
+          token_type: tokens.token_type || undefined,
+          expiry_date: tokens.expiry_date || undefined,
+        };
+
+        resolve(credentials);
+
+      } catch (error) {
+        res.writeHead(301, { Location: SIGN_IN_FAILURE_URL });
+        res.end();
+        server.close();
+        reject(error);
+      }
+    });
+
+    // Start server on random available port
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        reject(new Error("Failed to get server address"));
+        return;
+      }
+
+      const port = address.port;
+      const redirectUri = `http://localhost:${port}/oauth2callback`;
+
+      // Generate authorization URL
+      const authUrl = client.generateAuthUrl({
+        redirect_uri: redirectUri,
+        access_type: "offline",
+        scope: OAUTH_SCOPES,
+        state,
+      });
+
+      console.error("Code Assist login required.");
+      console.error("Attempting to open authentication page in your browser.");
+      console.error(`Otherwise navigate to:\n\n${authUrl}\n`);
+
+      // Open browser
+      open(authUrl).catch((err) => {
+        console.error(`Failed to open browser: ${err.message}`);
+        console.error(`Please visit this URL manually:\n${authUrl}`);
+      });
+    });
+
+    // Timeout after 5 minutes (same as Gemini CLI)
+    setTimeout(() => {
+      server.close();
+      reject(new Error("Authentication timed out after 5 minutes"));
+    }, 300000);
+  });
+}
+
+// Check if credentials are valid and refresh if needed
+async function validateCredentials(client: OAuth2Client, credentials: Credentials): Promise<boolean> {
+  try {
+    client.setCredentials({
+      access_token: credentials.access_token,
+      refresh_token: credentials.refresh_token,
+      expiry_date: credentials.expiry_date,
+    });
+
+    // Check if token is expired
+    if (credentials.expiry_date && credentials.expiry_date < Date.now()) {
+      if (debug) {
+        console.error("Access token expired");
+      }
+
+      if (credentials.refresh_token) {
+        if (debug) {
+          console.error("Attempting token refresh...");
+        }
+
+        const { credentials: newTokens } = await client.refreshAccessToken();
+        const newCredentials: Credentials = {
+          access_token: newTokens.access_token!,
+          refresh_token: newTokens.refresh_token || credentials.refresh_token,
+          scope: newTokens.scope || credentials.scope,
+          token_type: newTokens.token_type || credentials.token_type,
+          expiry_date: newTokens.expiry_date || undefined,
+        };
+
+        saveCredentials(newCredentials);
+        client.setCredentials(newTokens);
+
+        if (debug) {
+          console.error("Token refreshed successfully");
+        }
+
+        return true;
+      }
+
+      return false;
+    }
+
+    // Verify token is valid by checking with server
+    const { token } = await client.getAccessToken();
+    if (token) {
+      await client.getTokenInfo(token);
+      return true;
+    }
+
+    return false;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`Credential validation failed: ${message}`);
+    if (debug && e instanceof Error) {
+      console.error("Stack:", e.stack);
+    }
+    return false;
+  }
+}
+
+// Get authenticated OAuth client
+async function getAuthenticatedClient(): Promise<OAuth2Client> {
+  const client = createOAuthClient();
+
+  // Set up token refresh handler
+  client.on("tokens", (tokens) => {
+    const newCredentials: Credentials = {
+      access_token: tokens.access_token!,
+      refresh_token: tokens.refresh_token || undefined,
+      scope: tokens.scope || undefined,
+      token_type: tokens.token_type || undefined,
+      expiry_date: tokens.expiry_date || undefined,
+    };
+    saveCredentials(newCredentials);
+  });
+
+  // Check for existing credentials
+  if (!forceLogin) {
+    const credentials = loadCredentials();
+    if (credentials) {
+      const isValid = await validateCredentials(client, credentials);
+      if (isValid) {
+        if (debug) {
+          console.error("Using cached credentials");
+        }
+        return client;
+      }
+    }
+  }
+
+  // Perform new OAuth flow
+  const newCredentials = await performOAuthFlow(client);
+  saveCredentials(newCredentials);
+  console.error("Authentication succeeded\n");
+
+  return client;
+}
+
+// Setup user and get project ID from Code Assist API
+async function setupUser(client: OAuth2Client): Promise<string> {
+  const { token } = await client.getAccessToken();
+
+  if (!token) {
+    throw new Error("No access token available");
+  }
+
+  const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:loadCodeAssist`;
+
+  const requestBody = {
+    metadata: {
+      ideType: "IDE_UNSPECIFIED",
+      platform: "PLATFORM_UNSPECIFIED",
+      pluginType: "GEMINI",
+    },
+  };
+
+  if (debug) {
+    console.error("Setting up user with Code Assist API...");
+  }
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": USER_AGENT,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Setup failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (debug) {
+    console.error("Setup response:", JSON.stringify(data, null, 2));
+  }
+
+  // Get project ID from response
+  let projectId = data.cloudaicompanionProject;
+
+  // If not set up yet, need to onboard
+  if (!projectId && data.allowedTiers) {
+    if (debug) {
+      console.error("User not onboarded, initiating onboarding...");
+    }
+
+    // Find default tier (usually FREE for personal use)
+    const defaultTier = data.allowedTiers.find((t: any) => t.isDefault) || data.allowedTiers[0];
+
+    const onboardUrl = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:onboardUser`;
+    const onboardBody = {
+      tierId: defaultTier.id,
+      metadata: {
+        ideType: "IDE_UNSPECIFIED",
+        platform: "PLATFORM_UNSPECIFIED",
+        pluginType: "GEMINI",
+      },
+    };
+
+    // Poll until onboarding is complete
+    let onboardResponse = await fetch(onboardUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+      },
+      body: JSON.stringify(onboardBody),
+    });
+
+    if (!onboardResponse.ok) {
+      const errorText = await onboardResponse.text();
+      throw new Error(`Onboarding failed (${onboardResponse.status}): ${errorText}`);
+    }
+
+    let onboardData = await onboardResponse.json();
+
+    // Poll for completion
+    while (!onboardData.done) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      onboardResponse = await fetch(onboardUrl, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+          "User-Agent": USER_AGENT,
+        },
+        body: JSON.stringify(onboardBody),
+      });
+
+      if (!onboardResponse.ok) {
+        const errorText = await onboardResponse.text();
+        throw new Error(`Onboarding poll failed (${onboardResponse.status}): ${errorText}`);
+      }
+
+      onboardData = await onboardResponse.json();
+    }
+
+    projectId = onboardData.response?.cloudaicompanionProject?.id;
+
+    if (debug) {
+      console.error("Onboarding complete, project ID:", projectId);
+    }
+  }
+
+  if (!projectId) {
+    throw new Error("Could not obtain project ID from Code Assist API");
+  }
+
+  return projectId;
+}
+
+// Grounding metadata interface
+interface GroundingChunk {
+  web?: {
+    uri: string;
+    title?: string;
+  };
+}
+
+interface GroundingSupport {
+  segment?: {
+    startIndex?: number;
+    endIndex?: number;
+    text?: string;
+  };
+  groundingChunkIndices?: number[];
+  confidenceScores?: number[];
+}
+
+interface GroundingMetadata {
+  webSearchQueries?: string[];
+  groundingChunks?: GroundingChunk[];
+  groundingSupports?: GroundingSupport[];
+  searchEntryPoint?: {
+    renderedContent?: string;
+  };
+}
+
+// Make request to Code Assist API
+async function generateContent(client: OAuth2Client, promptText: string, projectId: string): Promise<string> {
+  const { token } = await client.getAccessToken();
+
+  if (!token) {
+    throw new Error("No access token available");
+  }
+
+  const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:generateContent`;
+
+  // Generate a unique prompt ID (similar to Gemini CLI)
+  const userPromptId = randomBytes(16).toString("hex");
+
+  // Request format for Code Assist API - contents/generationConfig must be nested in 'request'
+  const requestBody: any = {
+    model: model,
+    project: projectId,
+    user_prompt_id: userPromptId,
+    request: {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text: promptText,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature,
+        maxOutputTokens: maxTokens,
+      },
+    },
+  };
+
+  // Add Google Search grounding if enabled
+  if (searchEnabled) {
+    requestBody.request.tools = [{ googleSearch: {} }];
+  }
+
+  if (debug) {
+    console.error("\n--- DEBUG: Request ---");
+    console.error(`URL: ${url}`);
+    console.error(`Model: ${model}`);
+    console.error(`Max Tokens: ${maxTokens}`);
+    console.error(`Temperature: ${temperature}`);
+    console.error(`Prompt: ${promptText.substring(0, 100)}...`);
+    console.error("\nRequest Body:");
+    console.error(JSON.stringify(requestBody, null, 2));
+    console.error("----------------------\n");
+  }
+
+  const startTime = Date.now();
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "User-Agent": USER_AGENT,
+    },
+    body: JSON.stringify(requestBody),
+  });
+
+  const endTime = Date.now();
+  const duration = endTime - startTime;
+
+  if (debug) {
+    console.error(`--- DEBUG: Response ---`);
+    console.error(`Status: ${response.status} ${response.statusText}`);
+    console.error(`Duration: ${duration}ms`);
+    console.error("-----------------------\n");
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    let errorMessage = `API request failed (${response.status})`;
+
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.error?.message) {
+        errorMessage = errorJson.error.message;
+      }
+    } catch {
+      errorMessage += `: ${errorText}`;
+    }
+
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+
+  if (debug) {
+    console.error("--- DEBUG: Raw Response ---");
+    console.error(JSON.stringify(data, null, 2).substring(0, 500));
+    console.error("---------------------------\n");
+  }
+
+  // Extract text from response - Code Assist API wraps in 'response' field
+  const content = data.response?.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!content) {
+    if (debug) {
+      console.error("Full response:", JSON.stringify(data, null, 2));
+    }
+    throw new Error("No content in response");
+  }
+
+  // Handle grounding metadata if search was enabled
+  if (searchEnabled) {
+    const groundingMetadata: GroundingMetadata = data.response?.candidates?.[0]?.groundingMetadata;
+
+    if (groundingMetadata) {
+      let result = content;
+
+      // Add sources section
+      if (groundingMetadata.groundingChunks && groundingMetadata.groundingChunks.length > 0) {
+        result += "\n\n---\n**Sources:**\n";
+        groundingMetadata.groundingChunks.forEach((chunk, index) => {
+          if (chunk.web?.uri) {
+            const title = chunk.web.title || `Source ${index + 1}`;
+            result += `- [${title}](${chunk.web.uri})\n`;
+          }
+        });
+      }
+
+      // Show search queries used (in debug mode)
+      if (debug && groundingMetadata.webSearchQueries) {
+        console.error("\n--- Search Queries Used ---");
+        groundingMetadata.webSearchQueries.forEach(q => console.error(`  - ${q}`));
+        console.error("---------------------------\n");
+      }
+
+      return result;
+    }
+  }
+
+  return content;
+}
+
+// Show authentication status
+async function checkAuthStatus(): Promise<void> {
+  const credentials = loadCredentials();
+
+  if (!credentials) {
+    console.log("Status: Not authenticated");
+    console.log(`Credentials file: ${CREDENTIALS_PATH} (not found)`);
+    console.log("\nRun 'gemini-oauth --login' to authenticate.");
+    return;
+  }
+
+  console.log("Status: Authenticated");
+  console.log(`Credentials file: ${CREDENTIALS_PATH}`);
+
+  if (credentials.expiry_date) {
+    const expiry = new Date(credentials.expiry_date);
+    const isExpired = credentials.expiry_date < Date.now();
+    console.log(`Token expires: ${expiry.toISOString()} ${isExpired ? "(EXPIRED)" : ""}`);
+
+    if (isExpired && credentials.refresh_token) {
+      console.log("Has refresh token: Yes (can auto-refresh)");
+    } else if (isExpired) {
+      console.log("Has refresh token: No (re-authentication required)");
+    }
+  }
+
+  if (credentials.scope) {
+    console.log(`Scopes: ${credentials.scope}`);
+  }
+
+  // Try to validate
+  const client = createOAuthClient();
+  const isValid = await validateCredentials(client, credentials);
+  console.log(`Token valid: ${isValid ? "Yes" : "No"}`);
+}
+
+// Main execution
+async function main(): Promise<void> {
+  try {
+    // Handle status check
+    if (showStatus) {
+      await checkAuthStatus();
+      process.exit(0);
+    }
+
+    // Handle login-only mode
+    if (forceLogin && !prompt) {
+      await getAuthenticatedClient();
+      console.log("Login successful! You can now use gemini-oauth with prompts.");
+      process.exit(0);
+    }
+
+    // Require prompt for normal operation
+    if (!prompt) {
+      console.error("Error: No prompt provided");
+      console.error('Usage: gemini-oauth "your prompt"');
+      console.error('Run gemini-oauth --help for more options');
+      process.exit(1);
+    }
+
+    // Get authenticated client and generate content
+    const client = await getAuthenticatedClient();
+
+    // Get or setup project ID
+    let credentials = loadCredentials();
+    let projectId = credentials?.project_id;
+
+    if (!projectId) {
+      if (debug) {
+        console.error("No cached project ID, setting up user...");
+      }
+      projectId = await setupUser(client);
+
+      // Save project ID to credentials
+      if (credentials) {
+        credentials.project_id = projectId;
+        saveCredentials(credentials);
+      }
+
+      if (debug) {
+        console.error(`Project ID obtained: ${projectId}`);
+      }
+    } else if (debug) {
+      console.error(`Using cached project ID: ${projectId}`);
+    }
+
+    const response = await generateContent(client, prompt, projectId);
+    console.log(response);
+    process.exit(0);
+
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error("Error:", error.message);
+      if (debug) {
+        console.error("Stack:", error.stack);
+      }
+    } else {
+      console.error("Error:", String(error) || "Unknown error occurred");
+    }
+    process.exit(1);
+  }
+}
+
+main();

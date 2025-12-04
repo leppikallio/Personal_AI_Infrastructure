@@ -10,11 +10,13 @@
 package youtube
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -24,8 +26,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/danielmiessler/fabric/internal/i18n"
+	debuglog "github.com/danielmiessler/fabric/internal/log"
 	"github.com/danielmiessler/fabric/internal/plugins"
 	"github.com/kballard/go-shellquote"
+
 	"google.golang.org/api/option"
 	"google.golang.org/api/youtube/v3"
 )
@@ -65,7 +70,7 @@ func NewYouTube() (ret *YouTube) {
 		EnvNamePrefix:    plugins.BuildEnvVariablePrefix(label),
 	}
 
-	ret.ApiKey = ret.AddSetupQuestion("API key", true)
+	ret.ApiKey = ret.AddSetupQuestion("API key", false)
 
 	return
 }
@@ -81,7 +86,7 @@ type YouTube struct {
 func (o *YouTube) initService() (err error) {
 	if o.service == nil {
 		if o.ApiKey.Value == "" {
-			err = fmt.Errorf("YouTube API key required for comments and metadata. Run 'fabric --setup' to configure")
+			err = fmt.Errorf("%s", i18n.T("youtube_api_key_required"))
 			return
 		}
 		o.normalizeRegex = regexp.MustCompile(`[^a-zA-Z0-9]+`)
@@ -105,42 +110,107 @@ func (o *YouTube) GetVideoOrPlaylistId(url string) (videoId string, playlistId s
 	}
 
 	if videoId == "" && playlistId == "" {
-		err = fmt.Errorf("invalid YouTube URL, can't get video or playlist ID: '%s'", url)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_invalid_url"), url))
 	}
 	return
 }
 
-func (o *YouTube) GrabTranscriptForUrl(url string, language string) (ret string, err error) {
-	var videoId string
+// extractAndValidateVideoId extracts a video ID from the given URL and validates
+// that the URL points to a video rather than a playlist-only resource.
+// It returns an error if the URL is invalid or contains only playlist information.
+func (o *YouTube) extractAndValidateVideoId(url string) (videoId string, err error) {
 	var playlistId string
 	if videoId, playlistId, err = o.GetVideoOrPlaylistId(url); err != nil {
-		return
-	} else if videoId == "" && playlistId != "" {
-		err = fmt.Errorf("URL is a playlist, not a video")
+		return "", err
+	}
+	if videoId == "" && playlistId != "" {
+		return "", fmt.Errorf("%s", i18n.T("youtube_url_is_playlist_not_video"))
+	}
+	if videoId == "" {
+		return "", fmt.Errorf("%s", i18n.T("youtube_no_video_id_found"))
+	}
+	return videoId, nil
+}
+
+func (o *YouTube) GrabTranscriptForUrl(url string, language string) (ret string, err error) {
+	var videoId string
+	if videoId, err = o.extractAndValidateVideoId(url); err != nil {
 		return
 	}
-
 	return o.GrabTranscript(videoId, language)
 }
 
+// GrabTranscript retrieves the transcript for the specified video ID using yt-dlp.
+// The language parameter specifies the preferred subtitle language code (e.g., "en", "es").
+// It returns the transcript text or an error if the transcript cannot be retrieved.
 func (o *YouTube) GrabTranscript(videoId string, language string) (ret string, err error) {
-	// Use yt-dlp for reliable transcript extraction
 	return o.GrabTranscriptWithArgs(videoId, language, "")
 }
 
+// GrabTranscriptWithArgs retrieves the transcript for the specified video ID using yt-dlp
+// with custom command-line arguments. The language parameter specifies the preferred subtitle
+// language code. The additionalArgs parameter allows passing extra yt-dlp options like
+// "--cookies-from-browser brave" for authentication.
+// It returns the transcript text or an error if the transcript cannot be retrieved.
 func (o *YouTube) GrabTranscriptWithArgs(videoId string, language string, additionalArgs string) (ret string, err error) {
-	// Use yt-dlp for reliable transcript extraction
 	return o.tryMethodYtDlp(videoId, language, additionalArgs)
 }
 
+// GrabTranscriptWithTimestamps retrieves the transcript with timestamps for the specified
+// video ID using yt-dlp. The language parameter specifies the preferred subtitle language code.
+// Each line in the returned transcript is prefixed with a timestamp in [HH:MM:SS] format.
+// It returns the timestamped transcript text or an error if the transcript cannot be retrieved.
 func (o *YouTube) GrabTranscriptWithTimestamps(videoId string, language string) (ret string, err error) {
-	// Use yt-dlp for reliable transcript extraction with timestamps
 	return o.GrabTranscriptWithTimestampsWithArgs(videoId, language, "")
 }
 
+// GrabTranscriptWithTimestampsWithArgs retrieves the transcript with timestamps for the specified
+// video ID using yt-dlp with custom command-line arguments. The language parameter specifies the
+// preferred subtitle language code. The additionalArgs parameter allows passing extra yt-dlp options.
+// Each line in the returned transcript is prefixed with a timestamp in [HH:MM:SS] format.
+// It returns the timestamped transcript text or an error if the transcript cannot be retrieved.
 func (o *YouTube) GrabTranscriptWithTimestampsWithArgs(videoId string, language string, additionalArgs string) (ret string, err error) {
-	// Use yt-dlp for reliable transcript extraction with timestamps
 	return o.tryMethodYtDlpWithTimestamps(videoId, language, additionalArgs)
+}
+
+func detectError(ytOutput io.Reader) error {
+	scanner := bufio.NewScanner(ytOutput)
+	for scanner.Scan() {
+		curLine := scanner.Text()
+		debuglog.Debug(debuglog.Trace, "%s\n", curLine)
+		errorMessages := map[string]string{
+			"429":                                 i18n.T("youtube_rate_limit_exceeded"),
+			"Too Many Requests":                   i18n.T("youtube_rate_limit_exceeded"),
+			"Sign in to confirm you're not a bot": i18n.T("youtube_auth_required_bot_detection"),
+			"Use --cookies-from-browser":          i18n.T("youtube_auth_required_bot_detection"),
+		}
+
+		for key, message := range errorMessages {
+			if strings.Contains(curLine, key) {
+				return fmt.Errorf("%s", message)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("%s", i18n.T("youtube_ytdlp_stderr_error"))
+	}
+	return nil
+}
+
+func noLangs(args []string) []string {
+	var (
+		i int
+		v string
+	)
+	for i, v = range args {
+		if strings.Contains(v, "--sub-langs") {
+			break
+		}
+	}
+	if i == 0 || i == len(args)-1 {
+		return args
+	}
+	return append(args[0:i], args[i+2:]...)
 }
 
 // tryMethodYtDlpInternal is a helper function to reduce duplication between
@@ -148,14 +218,14 @@ func (o *YouTube) GrabTranscriptWithTimestampsWithArgs(videoId string, language 
 func (o *YouTube) tryMethodYtDlpInternal(videoId string, language string, additionalArgs string, processVTTFileFunc func(filename string) (string, error)) (ret string, err error) {
 	// Check if yt-dlp is available
 	if _, err = exec.LookPath("yt-dlp"); err != nil {
-		err = fmt.Errorf("yt-dlp not found in PATH. Please install yt-dlp to use YouTube transcript functionality")
+		err = fmt.Errorf("%s", i18n.T("youtube_ytdlp_not_found"))
 		return
 	}
 
 	// Create a temporary directory for yt-dlp output (cross-platform)
 	tempDir := filepath.Join(os.TempDir(), "fabric-youtube-"+videoId)
 	if err = os.MkdirAll(tempDir, 0755); err != nil {
-		err = fmt.Errorf("failed to create temp directory: %v", err)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_failed_create_temp_dir"), err))
 		return
 	}
 	defer os.RemoveAll(tempDir)
@@ -168,8 +238,6 @@ func (o *YouTube) tryMethodYtDlpInternal(videoId string, language string, additi
 		"--write-auto-subs",
 		"--skip-download",
 		"--sub-format", "vtt",
-		"--quiet",
-		"--no-warnings",
 		"-o", outputPath,
 	}
 
@@ -177,11 +245,11 @@ func (o *YouTube) tryMethodYtDlpInternal(videoId string, language string, additi
 
 	// Add built-in language selection first
 	if language != "" {
-		langMatch := language
-		if len(langMatch) > 2 {
-			langMatch = langMatch[:2]
+		langMatch := language[:2]
+		langOpts := language + "," + langMatch + ".*"
+		if langMatch != language {
+			langOpts += "," + langMatch
 		}
-		langOpts := language + "," + langMatch + ".*," + langMatch
 		args = append(args, "--sub-langs", langOpts)
 	}
 
@@ -189,72 +257,33 @@ func (o *YouTube) tryMethodYtDlpInternal(videoId string, language string, additi
 	if additionalArgs != "" {
 		additionalArgsList, err := shellquote.Split(additionalArgs)
 		if err != nil {
-			return "", fmt.Errorf("invalid yt-dlp arguments: %v", err)
+			return "", fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_invalid_ytdlp_arguments"), err))
 		}
 		args = append(args, additionalArgsList...)
 	}
 
 	args = append(args, videoURL)
 
-	cmd := exec.Command("yt-dlp", args...)
-
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err = cmd.Run(); err != nil {
-		stderrStr := stderr.String()
-
-		// Check for specific YouTube errors
-		if strings.Contains(stderrStr, "429") || strings.Contains(stderrStr, "Too Many Requests") {
-			err = fmt.Errorf("YouTube rate limit exceeded. Try again later or use different yt-dlp arguments like '--sleep-requests 1' to slow down requests. Error: %v", err)
-			return
+	for retry := 1; retry >= 0; retry-- {
+		var ytOutput []byte
+		cmd := exec.Command("yt-dlp", args...)
+		debuglog.Debug(debuglog.Trace, "yt-dlp %+v\n", cmd.Args)
+		ytOutput, err = cmd.CombinedOutput()
+		ytReader := bytes.NewReader(ytOutput)
+		if err = detectError(ytReader); err == nil {
+			break
 		}
-
-		if strings.Contains(stderrStr, "Sign in to confirm you're not a bot") || strings.Contains(stderrStr, "Use --cookies-from-browser") {
-			err = fmt.Errorf("YouTube requires authentication (bot detection). Use --yt-dlp-args='--cookies-from-browser BROWSER' where BROWSER is chrome, firefox, brave, etc. Error: %v", err)
-			return
-		}
-
-		if language != "" {
-			// Fallback: try without specifying language (let yt-dlp choose best available)
-			stderr.Reset()
-			fallbackArgs := append([]string{}, baseArgs...)
-
-			// Add additional arguments if provided
-			if additionalArgs != "" {
-				additionalArgsList, parseErr := shellquote.Split(additionalArgs)
-				if parseErr != nil {
-					return "", fmt.Errorf("invalid yt-dlp arguments: %v", parseErr)
-				}
-				fallbackArgs = append(fallbackArgs, additionalArgsList...)
-			}
-
-			// Don't specify language, let yt-dlp choose
-			fallbackArgs = append(fallbackArgs, videoURL)
-			cmd = exec.Command("yt-dlp", fallbackArgs...)
-			cmd.Stderr = &stderr
-			if err = cmd.Run(); err != nil {
-				stderrStr2 := stderr.String()
-				if strings.Contains(stderrStr2, "429") || strings.Contains(stderrStr2, "Too Many Requests") {
-					err = fmt.Errorf("YouTube rate limit exceeded. Try again later or use different yt-dlp arguments like '--sleep-requests 1'. Error: %v", err)
-				} else {
-					err = fmt.Errorf("yt-dlp failed with language '%s' and fallback. Original error: %s. Fallback error: %s", language, stderrStr, stderrStr2)
-				}
-				return
-			}
-		} else {
-			err = fmt.Errorf("yt-dlp failed: %v, stderr: %s", err, stderrStr)
-			return
-		}
+		args = noLangs(args)
 	}
-
+	if err != nil {
+		return
+	}
 	// Find VTT files using cross-platform approach
 	// Try to find files with the requested language first, but fall back to any VTT file
 	vttFiles, err := o.findVTTFilesWithFallback(tempDir, language)
 	if err != nil {
 		return "", err
 	}
-
 	return processVTTFileFunc(vttFiles[0])
 }
 
@@ -299,7 +328,7 @@ func (o *YouTube) readAndCleanVTTFile(filename string) (ret string, err error) {
 
 	ret = strings.TrimSpace(textBuilder.String())
 	if ret == "" {
-		err = fmt.Errorf("no transcript content found in VTT file")
+		err = fmt.Errorf("%s", i18n.T("youtube_no_transcript_content"))
 	}
 	return
 }
@@ -369,7 +398,7 @@ func (o *YouTube) readAndFormatVTTWithTimestamps(filename string) (ret string, e
 
 	ret = strings.TrimSpace(textBuilder.String())
 	if ret == "" {
-		err = fmt.Errorf("no transcript content found in VTT file")
+		err = fmt.Errorf("%s", i18n.T("youtube_no_transcript_content"))
 	}
 	return
 }
@@ -415,7 +444,7 @@ func shouldIncludeRepeat(lastTimestamp, currentTimestamp string) bool {
 func parseTimestampToSeconds(timestamp string) (int, error) {
 	parts := strings.Split(timestamp, ":")
 	if len(parts) < 2 || len(parts) > 3 {
-		return 0, fmt.Errorf("invalid timestamp format: %s", timestamp)
+		return 0, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_invalid_timestamp_format"), timestamp))
 	}
 
 	var hours, minutes, seconds int
@@ -445,20 +474,27 @@ func parseTimestampToSeconds(timestamp string) (int, error) {
 	return hours*3600 + minutes*60 + seconds, nil
 }
 
-func parseSeconds(seconds_str string) (int, error) {
-	var seconds int
-	var err error
-	if strings.Contains(seconds_str, ".") {
-		// Handle fractional seconds
-		second_parts := strings.Split(seconds_str, ".")
-		if seconds, err = strconv.Atoi(second_parts[0]); err != nil {
-			return 0, err
-		}
-	} else {
-		if seconds, err = strconv.Atoi(seconds_str); err != nil {
-			return 0, err
+func parseSeconds(secondsStr string) (int, error) {
+	if secondsStr == "" {
+		return 0, fmt.Errorf("%s", i18n.T("youtube_empty_seconds_string"))
+	}
+
+	// Extract integer part (before decimal point if present)
+	intPart := secondsStr
+	if idx := strings.Index(secondsStr, "."); idx != -1 {
+		if idx == 0 {
+			// Handle cases like ".5" -> treat as "0"
+			intPart = "0"
+		} else {
+			intPart = secondsStr[:idx]
 		}
 	}
+
+	seconds, err := strconv.Atoi(intPart)
+	if err != nil {
+		return 0, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_invalid_seconds_format"), secondsStr, err))
+	}
+
 	return seconds, nil
 }
 
@@ -494,11 +530,7 @@ func (o *YouTube) GrabDurationForUrl(url string) (ret int, err error) {
 	}
 
 	var videoId string
-	var playlistId string
-	if videoId, playlistId, err = o.GetVideoOrPlaylistId(url); err != nil {
-		return
-	} else if videoId == "" && playlistId != "" {
-		err = fmt.Errorf("URL is a playlist, not a video")
+	if videoId, err = o.extractAndValidateVideoId(url); err != nil {
 		return
 	}
 	return o.GrabDuration(videoId)
@@ -507,7 +539,7 @@ func (o *YouTube) GrabDurationForUrl(url string) (ret int, err error) {
 func (o *YouTube) GrabDuration(videoId string) (ret int, err error) {
 	var videoResponse *youtube.VideoListResponse
 	if videoResponse, err = o.service.Videos.List([]string{"contentDetails"}).Id(videoId).Do(); err != nil {
-		err = fmt.Errorf("error getting video details: %v", err)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_getting_video_details"), err))
 		return
 	}
 
@@ -515,7 +547,7 @@ func (o *YouTube) GrabDuration(videoId string) (ret int, err error) {
 
 	matches := durationRegex.FindStringSubmatch(durationStr)
 	if len(matches) == 0 {
-		return 0, fmt.Errorf("invalid duration string: %s", durationStr)
+		return 0, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_invalid_duration_string"), durationStr))
 	}
 
 	hours, _ := strconv.Atoi(matches[1])
@@ -529,11 +561,7 @@ func (o *YouTube) GrabDuration(videoId string) (ret int, err error) {
 
 func (o *YouTube) Grab(url string, options *Options) (ret *VideoInfo, err error) {
 	var videoId string
-	var playlistId string
-	if videoId, playlistId, err = o.GetVideoOrPlaylistId(url); err != nil {
-		return
-	} else if videoId == "" && playlistId != "" {
-		err = fmt.Errorf("URL is a playlist, not a video")
+	if videoId, err = o.extractAndValidateVideoId(url); err != nil {
 		return
 	}
 
@@ -541,14 +569,14 @@ func (o *YouTube) Grab(url string, options *Options) (ret *VideoInfo, err error)
 
 	if options.Metadata {
 		if ret.Metadata, err = o.GrabMetadata(videoId); err != nil {
-			err = fmt.Errorf("error getting video metadata: %v", err)
+			err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_getting_metadata"), err))
 			return
 		}
 	}
 
 	if options.Duration {
 		if ret.Duration, err = o.GrabDuration(videoId); err != nil {
-			err = fmt.Errorf("error parsing video duration: %v", err)
+			err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_parsing_duration"), err))
 			return
 		}
 
@@ -556,7 +584,7 @@ func (o *YouTube) Grab(url string, options *Options) (ret *VideoInfo, err error)
 
 	if options.Comments {
 		if ret.Comments, err = o.GrabComments(videoId); err != nil {
-			err = fmt.Errorf("error getting comments: %v", err)
+			err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_getting_comments"), err))
 			return
 		}
 	}
@@ -640,12 +668,12 @@ func (o *YouTube) SaveVideosToCSV(filename string, videos []*VideoMeta) (err err
 func (o *YouTube) FetchAndSavePlaylist(playlistID, filename string) (err error) {
 	var videos []*VideoMeta
 	if videos, err = o.FetchPlaylistVideos(playlistID); err != nil {
-		err = fmt.Errorf("error fetching playlist videos: %v", err)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("error_fetching_playlist_videos"), err))
 		return
 	}
 
 	if err = o.SaveVideosToCSV(filename, videos); err != nil {
-		err = fmt.Errorf("error saving videos to CSV: %v", err)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_saving_csv"), err))
 		return
 	}
 
@@ -656,7 +684,7 @@ func (o *YouTube) FetchAndSavePlaylist(playlistID, filename string) (err error) 
 func (o *YouTube) FetchAndPrintPlaylist(playlistID string) (err error) {
 	var videos []*VideoMeta
 	if videos, err = o.FetchPlaylistVideos(playlistID); err != nil {
-		err = fmt.Errorf("error fetching playlist videos: %v", err)
+		err = fmt.Errorf("%s", fmt.Sprintf(i18n.T("error_fetching_playlist_videos"), err))
 		return
 	}
 
@@ -691,11 +719,11 @@ func (o *YouTube) findVTTFilesWithFallback(dir, requestedLanguage string) ([]str
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to walk directory: %v", err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_failed_walk_directory"), err))
 	}
 
 	if len(vttFiles) == 0 {
-		return nil, fmt.Errorf("no VTT files found in directory")
+		return nil, fmt.Errorf("%s", i18n.T("youtube_no_vtt_files_found"))
 	}
 
 	// If no specific language requested, return the first file
@@ -766,11 +794,11 @@ func (o *YouTube) GrabMetadata(videoId string) (metadata *VideoMetadata, err err
 	call := o.service.Videos.List([]string{"snippet", "statistics"}).Id(videoId)
 	var response *youtube.VideoListResponse
 	if response, err = call.Do(); err != nil {
-		return nil, fmt.Errorf("error getting video metadata: %v", err)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_error_getting_metadata"), err))
 	}
 
 	if len(response.Items) == 0 {
-		return nil, fmt.Errorf("no video found with ID: %s", videoId)
+		return nil, fmt.Errorf("%s", fmt.Sprintf(i18n.T("youtube_no_video_found_with_id"), videoId))
 	}
 
 	video := response.Items[0]

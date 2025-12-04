@@ -13,8 +13,8 @@
  *   1 - Broken links found
  */
 
-import { readFileSync, existsSync } from 'fs';
-import { join, dirname, resolve } from 'path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { globSync } from 'glob';
 
 // ANSI color codes
@@ -43,27 +43,27 @@ function extractLinks(content: string): { link: string; line: number }[] {
   // Match [text](path) pattern for internal links
   const linkPattern = /\[([^\]]*)\]\(([^)]+)\)/g;
 
-  lines.forEach((line, index) => {
-    let match;
-    while ((match = linkPattern.exec(line)) !== null) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    const matches = line.matchAll(linkPattern);
+
+    for (const match of matches) {
       const linkPath = match[2];
 
       // Only check internal links (not URLs)
-      if (!linkPath.startsWith('http://') &&
-          !linkPath.startsWith('https://') &&
-          !linkPath.startsWith('mailto:') &&
-          !linkPath.startsWith('#')) {
-
-        // Remove anchor portion for file existence check
-        const pathWithoutAnchor = linkPath.split('#')[0];
-
+      if (
+        !linkPath.startsWith('http://') &&
+        !linkPath.startsWith('https://') &&
+        !linkPath.startsWith('mailto:') &&
+        !linkPath.startsWith('#')
+      ) {
         links.push({
           link: linkPath,
-          line: index + 1,
+          line: lineIndex + 1,
         });
       }
     }
-  });
+  }
 
   return links;
 }
@@ -186,7 +186,9 @@ function main(): number {
 
   if (docIssues.length > 0) {
     hasErrors = true;
-    console.log(`\n${colors.yellow}⚠️  Found ${docIssues.length} documentation issue(s):${colors.reset}\n`);
+    console.log(
+      `\n${colors.yellow}⚠️  Found ${docIssues.length} documentation issue(s):${colors.reset}\n`
+    );
 
     for (const issue of docIssues) {
       console.log(`  - ${issue}`);
@@ -198,7 +200,9 @@ function main(): number {
     return 0;
   }
 
-  console.log(`\n${colors.red}Documentation validation failed. Please fix the issues above.${colors.reset}\n`);
+  console.log(
+    `\n${colors.red}Documentation validation failed. Please fix the issues above.${colors.reset}\n`
+  );
   return 1;
 }
 

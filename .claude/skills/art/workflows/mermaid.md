@@ -576,7 +576,7 @@ VALIDATION CHECKPOINTS:
 - Are labels readable despite hand-lettered style?
 - Does it maintain UL aesthetic (flat colors, no gradients)?
 
-Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
+Sign "{{DA}}" small in bottom right corner in charcoal (#2D2D2D).
 ```
 
 ---
@@ -605,7 +605,7 @@ Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
 **Execute with optimal model for text-heavy diagrams:**
 
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --prompt "[YOUR COMPREHENSIVE PROMPT]" \
   --size 2K \
@@ -652,7 +652,7 @@ open /path/to/mermaid-diagram.png
 - [ ] **Black dominant:** Most structure in black
 - [ ] **Typography hierarchy:** 3 tiers clear
 - [ ] **No gradients:** Flat colors maintained
-- [ ] **Kai signature:** Present in corner
+- [ ] **{{DA}} signature:** Present in corner
 
 #### Readability & Clarity
 - [ ] **Labels readable:** All text legible despite hand-drawn style

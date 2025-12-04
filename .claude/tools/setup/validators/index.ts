@@ -2,9 +2,9 @@
  * Input validators for setup wizard
  */
 
-import { existsSync } from 'fs';
-import { homedir } from 'os';
-import { dirname } from 'path';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname } from 'node:path';
 
 /**
  * Expand ~ to home directory

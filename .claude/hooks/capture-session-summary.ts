@@ -7,9 +7,9 @@
  * documenting what was accomplished during the session.
  */
 
-import { writeFileSync, mkdirSync, existsSync, readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
-import { PAI_DIR, HISTORY_DIR } from './lib/pai-paths';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { HISTORY_DIR } from './lib/pai-paths';
 
 interface SessionData {
   conversation_id: string;
@@ -29,10 +29,7 @@ async function main() {
 
     // Generate timestamp for filename
     const now = new Date();
-    const timestamp = now.toISOString()
-      .replace(/:/g, '')
-      .replace(/\..+/, '')
-      .replace('T', '-'); // YYYY-MM-DD-HHMMSS
+    const timestamp = now.toISOString().replace(/:/g, '').replace(/\..+/, '').replace('T', '-'); // YYYY-MM-DD-HHMMSS
 
     const yearMonth = timestamp.substring(0, 7); // YYYY-MM
 
@@ -67,18 +64,18 @@ async function analyzeSession(conversationId: string, yearMonth: string): Promis
   // Try to read raw outputs for this session
   const rawOutputsDir = join(HISTORY_DIR, 'raw-outputs', yearMonth);
 
-  let filesChanged: string[] = [];
-  let commandsExecuted: string[] = [];
-  let toolsUsed: Set<string> = new Set();
+  const filesChanged: string[] = [];
+  const commandsExecuted: string[] = [];
+  const toolsUsed: Set<string> = new Set();
 
   try {
     if (existsSync(rawOutputsDir)) {
-      const files = readdirSync(rawOutputsDir).filter(f => f.endsWith('.jsonl'));
+      const files = readdirSync(rawOutputsDir).filter((f) => f.endsWith('.jsonl'));
 
       for (const file of files) {
         const filePath = join(rawOutputsDir, file);
         const content = readFileSync(filePath, 'utf-8');
-        const lines = content.split('\n').filter(l => l.trim());
+        const lines = content.split('\n').filter((l) => l.trim());
 
         for (const line of lines) {
           try {
@@ -98,13 +95,13 @@ async function analyzeSession(conversationId: string, yearMonth: string): Promis
                 commandsExecuted.push(entry.input.command);
               }
             }
-          } catch (e) {
+          } catch (_e) {
             // Skip invalid JSON lines
           }
         }
       }
     }
-  } catch (error) {
+  } catch (_error) {
     // Silent failure
   }
 
@@ -113,7 +110,7 @@ async function analyzeSession(conversationId: string, yearMonth: string): Promis
     filesChanged: [...new Set(filesChanged)].slice(0, 10), // Unique, max 10
     commandsExecuted: commandsExecuted.slice(0, 10), // Max 10
     toolsUsed: Array.from(toolsUsed),
-    duration: 0 // Unknown
+    duration: 0, // Unknown
   };
 }
 
@@ -160,7 +157,7 @@ ${info.filesChanged.length > 0 ? info.filesChanged.map((f: string) => `- \`${f}\
 
 ## Commands Executed
 
-${info.commandsExecuted.length > 0 ? '```bash\n' + info.commandsExecuted.join('\n') + '\n```' : 'None recorded'}
+${info.commandsExecuted.length > 0 ? `\`\`\`bash\n${info.commandsExecuted.join('\n')}\n\`\`\`` : 'None recorded'}
 
 ---
 

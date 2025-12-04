@@ -134,7 +134,7 @@ Claude Code supports the following hook events (from `${PAI_DIR}/hooks/lib/obser
 ---
 
 ### 4. **Stop**
-**When:** Main agent (Kai) completes a response
+**When:** Main agent ({{DA}}) completes a response
 **Use Cases:**
 - Voice notifications for task completion
 - Capture work summaries and learnings
@@ -163,7 +163,7 @@ Claude Code supports the following hook events (from `${PAI_DIR}/hooks/lib/obser
 **What They Do:**
 - `stop-hook.ts` - THE CRITICAL HOOK for main agent completions
   - Extracts `🎯 COMPLETED:` line from response
-  - Sends to voice server with PAI's voice ID (`s3TPKV1kjDlVtZbl4Ksh`)
+  - Sends to voice server with {{DA}}'s voice ID (`onwK4e9ZLuTAKqWW03F9`)
   - Captures work summaries to `${PAI_DIR}/history/sessions/YYYY-MM/` or learnings to `${PAI_DIR}/history/learnings/YYYY-MM/`
   - Updates Kitty tab with `✅` prefix
   - Sends event to observability dashboard
@@ -322,8 +322,8 @@ Hooks have access to all environment variables from `${PAI_DIR}/settings.json` `
 ```json
 {
   "env": {
-    "PAI_DIR": "/Users/daniel/.claude",
-    "DA": "Kai",
+    "PAI_DIR": "${PAI_DIR}",
+    "DA": "{{DA}}",
     "MCP_API_KEY": "...",
     "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"
   }
@@ -331,8 +331,8 @@ Hooks have access to all environment variables from `${PAI_DIR}/settings.json` `
 ```
 
 **Key Variables:**
-- `PAI_DIR` - PAI installation directory (always `/Users/daniel/.claude`)
-- `DA` - Digital Assistant name ("Kai")
+- `PAI_DIR` - PAI installation directory (always `${PAI_DIR}`)
+- `DA` - Digital Assistant name ("{{DA}}")
 - Hook scripts reference `${PAI_DIR}` in command paths
 
 ### Hook Configuration Structure
@@ -387,13 +387,13 @@ All hooks receive JSON data on stdin:
 
 ```typescript
 // stop-hook.ts pattern
-const completionMessage = extractKaiCompletion(lastMessage);
+const completionMessage = extractMarvinCompletion(lastMessage);
 
 const payload = {
   title: 'PAI',
   message: completionMessage,
   voice_enabled: true,
-  voice_id: 's3TPKV1kjDlVtZbl4Ksh'  // PAI's ElevenLabs voice
+  voice_id: 'onwK4e9ZLuTAKqWW03F9'  // {{DA}}'s ElevenLabs voice (Daniel)
 };
 
 await fetch('http://localhost:8888/notify', {
@@ -404,11 +404,12 @@ await fetch('http://localhost:8888/notify', {
 ```
 
 **Agent-Specific Voices:**
-- Main agent (PAI): `s3TPKV1kjDlVtZbl4Ksh`
-- Engineer: `fATgBRI8wg5KkDFg8vBd`
-- Researcher: `AXdMgz6evoL7OPd7eU12`
-- Pentester: `xvHLFjaUEpx4BOf7EiDd`
-- Intern: `d3MFdIuCfbAIwiu7jC4a`
+- Main agent ({{DA}}): `onwK4e9ZLuTAKqWW03F9` (Daniel)
+- Engineer: `bIHbv24MWmeRgasZH58o` (Will)
+- Researcher: `EXAVITQu4vr4xnSDxMaL` (Sarah)
+- Pentester: `cjVigY5qzO86Huf0OWal` (Eric)
+- Architect: `JBFqnCBsd6RMkjVDRZzb` (George)
+- Designer: `Xb7hH8MSUJpSbSDYk0k2` (Alice)
 
 See `skills/CORE/SKILL.md` for complete voice ID mapping.
 
@@ -745,7 +746,7 @@ setTimeout(() => {
 # Test voice server directly
 curl -X POST http://localhost:8888/notify \
   -H "Content-Type: application/json" \
-  -d '{"message":"Test message","voice_id":"s3TPKV1kjDlVtZbl4Ksh","title":"Test"}'
+  -d '{"message":"Test message","voice_id":"onwK4e9ZLuTAKqWW03F9","title":"Test"}'
 ```
 
 **Common Issues:**
@@ -1067,7 +1068,7 @@ capture-all-events.ts Universal event logger
 VOICE SERVER:
 URL: http://localhost:8888/notify
 Payload: {"message":"...", "voice_id":"...", "title":"..."}
-Main Voice: s3TPKV1kjDlVtZbl4Ksh (PAI)
+Main Voice: onwK4e9ZLuTAKqWW03F9 ({{DA}} - Daniel)
 
 OBSERVABILITY:
 Server: http://localhost:4000

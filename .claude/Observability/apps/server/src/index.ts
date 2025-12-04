@@ -14,7 +14,7 @@ import { startFileIngestion, getRecentEvents, getFilterOptions } from './file-in
 // Store WebSocket clients
 const wsClients = new Set<any>();
 
-// Start file-based ingestion (reads from ~/.claude/history/raw-outputs/)
+// Start file-based ingestion (reads from ${PAI_DIR}/history/raw-outputs/)
 // Pass a callback to broadcast new events to connected WebSocket clients
 startFileIngestion((events) => {
   // Broadcast each event to all connected WebSocket clients
@@ -316,10 +316,10 @@ const server = Bun.serve({
       }
     }
 
-    // POST /api/haiku/summarize - Proxy for Haiku summarization (reads API key from ~/.claude/.env)
+    // POST /api/haiku/summarize - Proxy for Haiku summarization (reads API key from ${PAI_DIR}/.env)
     if (url.pathname === '/api/haiku/summarize' && req.method === 'POST') {
       try {
-        // Load .env from ~/.claude/.env
+        // Load .env from ${PAI_DIR}/.env
         const homeDir = process.env.HOME || '';
         const envPath = `${homeDir}/.claude/.env`;
 
@@ -337,7 +337,7 @@ const server = Bun.serve({
         if (!apiKey) {
           return new Response(JSON.stringify({
             success: false,
-            error: 'ANTHROPIC_API_KEY not configured in ~/.claude/.env'
+            error: 'ANTHROPIC_API_KEY not configured in ${PAI_DIR}/.env'
           }), {
             status: 500,
             headers: { ...headers, 'Content-Type': 'application/json' }

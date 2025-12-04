@@ -1,5 +1,5 @@
 ---
-name: brightdata
+name: Brightdata
 description: |
   Progressive four-tier URL content scraping with automatic fallback strategy.
 
@@ -14,7 +14,7 @@ description: |
 
 **When user requests scraping/fetching URL content:**
 Examples: "scrape this URL", "fetch this page", "get content from [URL]", "pull content from this site", "retrieve [URL]", "can't access this site", "this site is blocking me", "use Bright Data to fetch"
-→ **READ:** ${PAI_DIR}/skills/brightdata/workflows/four-tier-scrape.md
+→ **READ:** ${PAI_DIR}/skills/Brightdata/workflows/four-tier-scrape.md
 → **EXECUTE:** Four-tier progressive scraping workflow (WebFetch → Curl → Browser Automation → Bright Data MCP)
 
 ---

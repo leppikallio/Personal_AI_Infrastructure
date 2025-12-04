@@ -6,7 +6,7 @@
  * Note: All context loading handled by PAI skill system (core identity in skill description, full context in SKILL.md)
  */
 
-import { execSync } from 'child_process';
+import { execSync } from 'node:child_process';
 import { PAI_DIR } from './lib/pai-paths';
 
 interface HookInput {
@@ -19,7 +19,7 @@ interface HookInput {
 /**
  * Read stdin with timeout
  */
-async function readStdinWithTimeout(timeout: number = 5000): Promise<string> {
+async function readStdinWithTimeout(timeout = 5000): Promise<string> {
   return new Promise((resolve, reject) => {
     let data = '';
     const timer = setTimeout(() => {
@@ -54,14 +54,24 @@ async function main() {
     // Generate quick fallback tab title
     let tabTitle = 'Processing request...';
     if (prompt) {
-      const words = prompt.replace(/[^\w\s]/g, ' ').trim().split(/\s+/)
-        .filter(w => w.length > 2 && !['the', 'and', 'but', 'for', 'are', 'with', 'you', 'can'].includes(w.toLowerCase()))
+      const words = prompt
+        .replace(/[^\w\s]/g, ' ')
+        .trim()
+        .split(/\s+/)
+        .filter(
+          (w) =>
+            w.length > 2 &&
+            !['the', 'and', 'but', 'for', 'are', 'with', 'you', 'can'].includes(w.toLowerCase())
+        )
         .slice(0, 3);
 
       if (words.length > 0) {
         tabTitle = words[0].charAt(0).toUpperCase() + words[0].slice(1).toLowerCase();
         if (words.length > 1) {
-          tabTitle += ' ' + words.slice(1).map(w => w.toLowerCase()).join(' ');
+          tabTitle += ` ${words
+            .slice(1)
+            .map((w) => w.toLowerCase())
+            .join(' ')}`;
         }
         tabTitle += '...';
       }
@@ -69,12 +79,12 @@ async function main() {
 
     // Set initial tab title with recycle emoji
     try {
-      const titleWithEmoji = '♻️ ' + tabTitle;
+      const titleWithEmoji = `♻️ ${tabTitle}`;
       const escapedTitle = titleWithEmoji.replace(/'/g, "'\\''");
       execSync(`printf '\\033]0;${escapedTitle}\\007' >&2`);
       execSync(`printf '\\033]2;${escapedTitle}\\007' >&2`);
       execSync(`printf '\\033]30;${escapedTitle}\\007' >&2`);
-    } catch (e) {
+    } catch (_e) {
       // Silently fail
     }
 
@@ -84,10 +94,10 @@ async function main() {
         Bun.spawn(['bun', `${PAI_DIR}/hooks/update-tab-title.ts`, prompt], {
           stdout: 'ignore',
           stderr: 'ignore',
-          stdin: 'ignore'
+          stdin: 'ignore',
         });
       }
-    } catch (e) {
+    } catch (_e) {
       // Silently fail
     }
 

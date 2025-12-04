@@ -10,9 +10,9 @@
  * in sync with code changes.
  */
 
-import { execSync } from 'child_process';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 // ANSI color codes for output
 const colors = {
@@ -34,7 +34,7 @@ interface FileChange {
 interface ChangeAnalysis {
   changedFiles: string[];
   fileChanges: FileChange[];
-  affectedAreas: Map<string, FileChange[]>;  // area -> files that changed
+  affectedAreas: Map<string, FileChange[]>; // area -> files that changed
   needsReadmeUpdate: boolean;
   needsDocUpdate: Map<string, boolean>;
   changeSummary: string;
@@ -58,8 +58,8 @@ function getStagedFilesDetailed(): FileChange[] {
       const parts = line.split('\t');
       if (parts.length !== 3) continue;
 
-      const linesAdded = parts[0] === '-' ? 0 : parseInt(parts[0]);
-      const linesDeleted = parts[1] === '-' ? 0 : parseInt(parts[1]);
+      const linesAdded = parts[0] === '-' ? 0 : Number.parseInt(parts[0]);
+      const linesDeleted = parts[1] === '-' ? 0 : Number.parseInt(parts[1]);
       const path = parts[2];
 
       // Determine type
@@ -93,7 +93,10 @@ function getStagedFiles(): string[] {
     const output = execSync('git diff --cached --name-only --diff-filter=d', {
       encoding: 'utf-8',
     });
-    return output.trim().split('\n').filter(f => f.length > 0);
+    return output
+      .trim()
+      .split('\n')
+      .filter((f) => f.length > 0);
   } catch (error) {
     console.error('Error getting staged files:', error);
     return [];
@@ -104,9 +107,9 @@ function getStagedFiles(): string[] {
  * Generate a human-readable summary of changes
  */
 function generateChangeSummary(fileChanges: FileChange[]): string {
-  const added = fileChanges.filter(f => f.type === 'added').length;
-  const modified = fileChanges.filter(f => f.type === 'modified').length;
-  const deleted = fileChanges.filter(f => f.type === 'deleted').length;
+  const added = fileChanges.filter((f) => f.type === 'added').length;
+  const modified = fileChanges.filter((f) => f.type === 'modified').length;
+  const deleted = fileChanges.filter((f) => f.type === 'deleted').length;
 
   const parts: string[] = [];
   if (added > 0) parts.push(`${added} added`);
@@ -128,41 +131,44 @@ function analyzeChanges(fileChanges: FileChange[]): ChangeAnalysis {
     const { path } = change;
 
     // Skip if this IS a documentation file being changed
-    if (path.startsWith('documentation/') || path === 'README.md' ||
-        path === 'hooks/update-documentation.ts') {
+    if (
+      path.startsWith('documentation/') ||
+      path === 'README.md' ||
+      path === 'hooks/update-documentation.ts'
+    ) {
       continue;
     }
 
     // Map files to affected areas and group by area
     if (path.startsWith('skills/')) {
       if (!affectedAreas.has('skills')) affectedAreas.set('skills', []);
-      affectedAreas.get('skills')!.push(change);
+      affectedAreas.get('skills')?.push(change);
       needsDocUpdate.set('documentation/skills-system.md', true);
     } else if (path.startsWith('commands/')) {
       if (!affectedAreas.has('commands')) affectedAreas.set('commands', []);
-      affectedAreas.get('commands')!.push(change);
+      affectedAreas.get('commands')?.push(change);
       needsDocUpdate.set('documentation/command-system.md', true);
     } else if (path.startsWith('hooks/')) {
       if (!affectedAreas.has('hooks')) affectedAreas.set('hooks', []);
-      affectedAreas.get('hooks')!.push(change);
+      affectedAreas.get('hooks')?.push(change);
       needsDocUpdate.set('documentation/hook-system.md', true);
     } else if (path.startsWith('agents/')) {
       if (!affectedAreas.has('agents')) affectedAreas.set('agents', []);
-      affectedAreas.get('agents')!.push(change);
+      affectedAreas.get('agents')?.push(change);
       needsDocUpdate.set('documentation/agent-system.md', true);
     } else if (path.startsWith('voice-server/')) {
       if (!affectedAreas.has('voice')) affectedAreas.set('voice', []);
-      affectedAreas.get('voice')!.push(change);
+      affectedAreas.get('voice')?.push(change);
       needsDocUpdate.set('documentation/voice-system.md', true);
     } else if (path === 'package.json' || path === 'bun.lockb') {
       if (!affectedAreas.has('dependencies')) affectedAreas.set('dependencies', []);
-      affectedAreas.get('dependencies')!.push(change);
+      affectedAreas.get('dependencies')?.push(change);
     } else if (path === '.mcp.json') {
       if (!affectedAreas.has('mcp-servers')) affectedAreas.set('mcp-servers', []);
-      affectedAreas.get('mcp-servers')!.push(change);
+      affectedAreas.get('mcp-servers')?.push(change);
     } else if (path === 'settings.json') {
       if (!affectedAreas.has('settings')) affectedAreas.set('settings', []);
-      affectedAreas.get('settings')!.push(change);
+      affectedAreas.get('settings')?.push(change);
     }
   }
 
@@ -172,7 +178,7 @@ function analyzeChanges(fileChanges: FileChange[]): ChangeAnalysis {
   const changeSummary = generateChangeSummary(fileChanges);
 
   return {
-    changedFiles: fileChanges.map(f => f.path),
+    changedFiles: fileChanges.map((f) => f.path),
     fileChanges,
     affectedAreas,
     needsReadmeUpdate,
@@ -211,9 +217,9 @@ function updateReadme(analysis: ChangeAnalysis): boolean {
       const bullets: string[] = [];
 
       for (const [area, changes] of analysis.affectedAreas) {
-        const added = changes.filter(c => c.type === 'added').length;
-        const modified = changes.filter(c => c.type === 'modified').length;
-        const deleted = changes.filter(c => c.type === 'deleted').length;
+        const added = changes.filter((c) => c.type === 'added').length;
+        const modified = changes.filter((c) => c.type === 'modified').length;
+        const deleted = changes.filter((c) => c.type === 'deleted').length;
 
         let desc = `**${area.charAt(0).toUpperCase() + area.slice(1)}:** `;
         const parts: string[] = [];
@@ -242,20 +248,20 @@ ${updateDescription}
 
     // Find the insertion point - after the TIP box and before first <details>
     const tipEndPattern = /> \*\*✨ v\d+\.\d+\.\d+ NEW:.*?\n\n/s;
-    const detailsStartPattern = /<details>\s*<summary><strong>📅/;
+    const _detailsStartPattern = /<details>\s*<summary><strong>📅/;
 
     // Find where to insert (right after the tip box, before first details)
     const tipMatch = content.match(tipEndPattern);
     if (tipMatch) {
       const insertPos = tipMatch.index! + tipMatch[0].length;
-      content = content.slice(0, insertPos) + newEntry + '\n' + content.slice(insertPos);
+      content = `${content.slice(0, insertPos) + newEntry}\n${content.slice(insertPos)}`;
     } else {
       // Fallback: insert after "Recent Updates" heading
       const headingPattern = /## 🚀 \*\*Recent Updates\*\*\n\n/;
       const headingMatch = content.match(headingPattern);
       if (headingMatch) {
         const insertPos = headingMatch.index! + headingMatch[0].length;
-        content = content.slice(0, insertPos) + newEntry + '\n' + content.slice(insertPos);
+        content = `${content.slice(0, insertPos) + newEntry}\n${content.slice(insertPos)}`;
       } else {
         console.log(`${colors.yellow}⚠️  Could not find insertion point in README${colors.reset}`);
         return false;
@@ -295,11 +301,17 @@ function updateDocumentation(analysis: ChangeAnalysis): string[] {
       const dateStr = now.toISOString().split('T')[0];
 
       // Determine which area this doc covers
-      const area = docFile.includes('skills') ? 'skills' :
-                   docFile.includes('command') ? 'commands' :
-                   docFile.includes('hook') ? 'hooks' :
-                   docFile.includes('agent') ? 'agents' :
-                   docFile.includes('voice') ? 'voice' : null;
+      const area = docFile.includes('skills')
+        ? 'skills'
+        : docFile.includes('command')
+          ? 'commands'
+          : docFile.includes('hook')
+            ? 'hooks'
+            : docFile.includes('agent')
+              ? 'agents'
+              : docFile.includes('voice')
+                ? 'voice'
+                : null;
 
       if (area && analysis.affectedAreas.has(area)) {
         const changes = analysis.affectedAreas.get(area)!;
@@ -309,8 +321,7 @@ function updateDocumentation(analysis: ChangeAnalysis): string[] {
         changeLines.push(`\n## Recent Changes (${dateStr})\n`);
 
         for (const change of changes) {
-          const emoji = change.type === 'added' ? '➕' :
-                       change.type === 'modified' ? '✏️' : '🗑️';
+          const emoji = change.type === 'added' ? '➕' : change.type === 'modified' ? '✏️' : '🗑️';
           changeLines.push(`- ${emoji} \`${change.path}\` (${change.type})`);
           if (change.linesAdded > 0 || change.linesDeleted > 0) {
             changeLines.push(`  - +${change.linesAdded} / -${change.linesDeleted} lines`);
@@ -329,7 +340,7 @@ function updateDocumentation(analysis: ChangeAnalysis): string[] {
           );
         } else {
           // Append at the end
-          content = content.trimEnd() + `\n${updateContent}\n\n---\n<!-- Last Updated: ${dateStr} -->\n`;
+          content = `${content.trimEnd()}\n${updateContent}\n\n---\n<!-- Last Updated: ${dateStr} -->\n`;
         }
       } else {
         // Just update the timestamp
@@ -339,7 +350,7 @@ function updateDocumentation(analysis: ChangeAnalysis): string[] {
         if (lastUpdatedPattern.test(content)) {
           content = content.replace(lastUpdatedPattern, lastUpdatedLine);
         } else {
-          content = content.trimEnd() + `\n\n---\n${lastUpdatedLine}\n`;
+          content = `${content.trimEnd()}\n\n---\n${lastUpdatedLine}\n`;
         }
       }
 
@@ -384,14 +395,17 @@ function main(): number {
   }
 
   // Filter out documentation files to avoid circular updates
-  const nonDocChanges = fileChanges.filter(f =>
-    !f.path.startsWith('documentation/') &&
-    f.path !== 'README.md' &&
-    f.path !== 'hooks/update-documentation.ts'
+  const nonDocChanges = fileChanges.filter(
+    (f) =>
+      !f.path.startsWith('documentation/') &&
+      f.path !== 'README.md' &&
+      f.path !== 'hooks/update-documentation.ts'
   );
 
   if (nonDocChanges.length === 0) {
-    console.log(`${colors.green}✅ Only documentation files changed, no updates needed${colors.reset}`);
+    console.log(
+      `${colors.green}✅ Only documentation files changed, no updates needed${colors.reset}`
+    );
     return 0;
   }
 
@@ -406,7 +420,9 @@ function main(): number {
   }
 
   if (analysis.affectedAreas.size > 0) {
-    console.log(`${colors.cyan}🔍 Affected areas: ${Array.from(analysis.affectedAreas.keys()).join(', ')}${colors.reset}`);
+    console.log(
+      `${colors.cyan}🔍 Affected areas: ${Array.from(analysis.affectedAreas.keys()).join(', ')}${colors.reset}`
+    );
   }
 
   const updatedFiles: string[] = [];

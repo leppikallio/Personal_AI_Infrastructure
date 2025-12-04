@@ -30,7 +30,7 @@ import * as os from 'os';
 
 const exec = promisify(require('child_process').exec);
 
-// Load .env file from ~/.claude directory
+// Load .env file from ${PAI_DIR} directory
 function loadEnv() {
   const envPath = path.join(os.homedir(), '.claude', '.env');
   if (fs.existsSync(envPath)) {

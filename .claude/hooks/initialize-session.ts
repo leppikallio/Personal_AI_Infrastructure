@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
 
 /**
- * initialize-session.ts
+ * initialize-pai-session.ts
  *
- * Main session initialization hook that runs at the start of every Claude Code session.
+ * Main PAI session initialization hook that runs at the start of every Claude Code session.
  *
  * What it does:
  * - Checks if this is a subagent session (skips for subagents)
  * - Tests that stop-hook is properly configured
  * - Sets initial terminal tab title
  * - Sends voice notification that system is ready (if voice server is running)
- * - Calls load-core-context.ts to inject core context into the session
+ * - Calls load-core-context.ts to inject PAI context into the session
  *
  * Setup:
  * 1. Set environment variables in settings.json:
@@ -21,16 +21,16 @@
  * 3. Add both hooks to SessionStart in settings.json
  */
 
-import { existsSync, statSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { PAI_DIR } from './lib/pai-paths';
 
 // Debounce duration in milliseconds (prevents duplicate SessionStart events)
 const DEBOUNCE_MS = 2000;
 const LOCKFILE = join(tmpdir(), 'pai-session-start.lock');
 
-async function sendNotification(title: string, message: string, priority: string = 'normal') {
+async function sendNotification(title: string, message: string, priority = 'normal') {
   try {
     // Get voice ID from environment variable (customize in settings.json)
     const voiceId = process.env.DA_VOICE_ID || 'default-voice-id';
@@ -45,14 +45,14 @@ async function sendNotification(title: string, message: string, priority: string
         message,
         voice_enabled: true,
         priority,
-        voice_id: voiceId
+        voice_id: voiceId,
       }),
     });
 
     if (!response.ok) {
       console.error(`Notification failed: ${response.status}`);
     }
-  } catch (error) {
+  } catch (_error) {
     // Silently fail if voice server isn't running
     // console.error('Failed to send notification:', error);
   }
@@ -66,7 +66,7 @@ function shouldDebounce(): boolean {
   try {
     if (existsSync(LOCKFILE)) {
       const lockContent = readFileSync(LOCKFILE, 'utf-8');
-      const lockTime = parseInt(lockContent, 10);
+      const lockTime = Number.parseInt(lockContent, 10);
       const now = Date.now();
 
       if (now - lockTime < DEBOUNCE_MS) {
@@ -78,7 +78,7 @@ function shouldDebounce(): boolean {
     // Update lockfile with current timestamp
     writeFileSync(LOCKFILE, Date.now().toString());
     return false;
-  } catch (error) {
+  } catch (_error) {
     // If any error, just proceed (don't break session start)
     try {
       writeFileSync(LOCKFILE, Date.now().toString());
@@ -130,8 +130,8 @@ async function main() {
   try {
     // Check if this is a subagent session - if so, exit silently
     const claudeProjectDir = process.env.CLAUDE_PROJECT_DIR || '';
-    const isSubagent = claudeProjectDir.includes('/.claude/agents/') ||
-                      process.env.CLAUDE_AGENT_TYPE !== undefined;
+    const isSubagent =
+      claudeProjectDir.includes('/.claude/agents/') || process.env.CLAUDE_AGENT_TYPE !== undefined;
 
     if (isSubagent) {
       // This is a subagent session - exit silently without notification

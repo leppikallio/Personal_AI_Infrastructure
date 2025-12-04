@@ -1,14 +1,14 @@
 # Universal Output Capture System (UOCS) - History System Documentation
 
 **Location:** `${PAI_DIR}/history/`
-**Purpose:** Automated documentation of ALL work performed by PAI and specialized agents
+**Purpose:** Automated documentation of ALL work performed by {{DA}} and specialized agents
 **Status:** ✅ FULLY OPERATIONAL
 
 ---
 
 ## Overview
 
-The Universal Output Capture System (UOCS) is PAI's automatic memory - capturing every feature, bug fix, decision, learning, research, and session through hooks with **zero manual effort**.
+The Universal Output Capture System (UOCS) is {{DA}}'s automatic memory - capturing every feature, bug fix, decision, learning, research, and session through hooks with **zero manual effort**.
 
 **Core Principle:** Work normally, documentation handles itself.
 
@@ -103,7 +103,7 @@ YYYY-MM-DD-HHMMSS_[PROJECT]_[TYPE]_[HIERARCHY]_[DESCRIPTION].md
 - No code updates needed when Claude Code adds new fields
 
 ### 2. Stop Hook
-**Triggers:** Main agent (PAI) task completion
+**Triggers:** Main agent ({{DA}}) task completion
 **Implementation:** `${PAI_DIR}/hooks/stop-hook.ts`
 **Output:** Auto-captured files in `learnings/` or `sessions/` based on content
 **Purpose:** Lightweight capture of work summaries and learning moments
@@ -399,7 +399,7 @@ find ${PAI_DIR}/history/decisions -name "*.md" | \
 
 ## Routing Triggers
 
-**Load this documentation when the user says:**
+**Load this documentation when Daniel says:**
 - "history system" or "UOCS"
 - "how does capture work" or "automatic documentation"
 - "where are sessions saved" or "history directory"

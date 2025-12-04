@@ -6,10 +6,10 @@
  * Enhanced with agent instance metadata extraction
  */
 
-import { readFileSync, appendFileSync, mkdirSync, existsSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import { PAI_DIR } from './lib/pai-paths';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { enrichEventWithAgentMetadata, isAgentSpawningCall } from './lib/metadata-extraction';
+import { PAI_DIR } from './lib/pai-paths';
 
 interface HookEvent {
   source_app: string;
@@ -23,7 +23,9 @@ interface HookEvent {
 // Get PST timestamp
 function getPSTTimestamp(): string {
   const date = new Date();
-  const pstDate = new Date(date.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' }));
+  const pstDate = new Date(
+    date.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' })
+  );
 
   const year = pstDate.getFullYear();
   const month = String(pstDate.getMonth() + 1).padStart(2, '0');
@@ -38,7 +40,9 @@ function getPSTTimestamp(): string {
 // Get current events file path
 function getEventsFilePath(): string {
   const now = new Date();
-  const pstDate = new Date(now.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' }));
+  const pstDate = new Date(
+    now.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' })
+  );
   const year = pstDate.getFullYear();
   const month = String(pstDate.getMonth() + 1).padStart(2, '0');
   const day = String(pstDate.getDate()).padStart(2, '0');
@@ -65,7 +69,7 @@ function getAgentForSession(sessionId: string): string {
       const mappings = JSON.parse(readFileSync(mappingFile, 'utf-8'));
       return mappings[sessionId] || 'pai';
     }
-  } catch (error) {
+  } catch (_error) {
     // Ignore errors, default to pai
   }
   return 'pai';
@@ -82,7 +86,7 @@ function setAgentForSession(sessionId: string, agentName: string): void {
 
     mappings[sessionId] = agentName;
     writeFileSync(mappingFile, JSON.stringify(mappings, null, 2), 'utf-8');
-  } catch (error) {
+  } catch (_error) {
     // Silently fail - don't block
   }
 }
@@ -129,7 +133,7 @@ async function main() {
       setAgentForSession(sessionId, agentName);
     }
     // Check if this is from a subagent based on cwd containing 'agent'
-    else if (hookData.cwd && hookData.cwd.includes('/agents/')) {
+    else if (hookData.cwd?.includes('/agents/')) {
       // Extract agent name from path like "/agents/designer/"
       const agentMatch = hookData.cwd.match(/\/agents\/([^\/]+)/);
       if (agentMatch) {
@@ -145,23 +149,18 @@ async function main() {
       hook_event_type: eventType,
       payload: hookData,
       timestamp: Date.now(),
-      timestamp_pst: getPSTTimestamp()
+      timestamp_pst: getPSTTimestamp(),
     };
 
     // Enrich with agent instance metadata if this is a Task tool call
     if (isAgentSpawningCall(hookData.tool_name, hookData.tool_input)) {
-      event = enrichEventWithAgentMetadata(
-        event,
-        hookData.tool_input,
-        hookData.description
-      );
+      event = enrichEventWithAgentMetadata(event, hookData.tool_input, hookData.description);
     }
 
     // Append to events file
     const eventsFile = getEventsFilePath();
-    const jsonLine = JSON.stringify(event) + '\n';
+    const jsonLine = `${JSON.stringify(event)}\n`;
     appendFileSync(eventsFile, jsonLine, 'utf-8');
-
   } catch (error) {
     // Silently fail - don't block Claude Code
     console.error('Event capture error:', error);

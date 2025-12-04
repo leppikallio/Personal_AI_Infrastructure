@@ -122,7 +122,7 @@ Technical diagrams explain systems, architectures, processes, and flows. Unlike 
 │   │   Database   │                            │  ← TIER 2: Component label
 │   └──────────────┘                            │
 │                                                 │
-│                    "Kai" signature              │
+│                    "{{DA}}" signature           │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -341,7 +341,7 @@ CRITICAL REQUIREMENTS:
 - Blueprint/engineering notebook aesthetic
 - Strategic color use (not everything colored, mostly black with purple/teal highlights)
 
-[Optional: Add "Kai" signature in bottom right corner in charcoal]
+[Optional: Add "{{DA}}" signature in bottom right corner in charcoal]
 ```
 
 ---
@@ -365,7 +365,7 @@ CRITICAL REQUIREMENTS:
 ### Step 5: Execute Generation
 
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --prompt "[YOUR PROMPT]" \
   --size 2K \

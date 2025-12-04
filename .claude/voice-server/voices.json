@@ -2,12 +2,12 @@
   "$schema": "./voices-schema.json",
   "default_rate": 175,
   "voices": {
-    "kai": {
-      "voice_name": "Jamie (Premium)",
+    "marvin": {
+      "voice_id": "onwK4e9ZLuTAKqWW03F9",
       "rate_multiplier": 1.3,
       "rate_wpm": 228,
-      "description": "UK Male - Professional, conversational",
-      "type": "Premium"
+      "description": "Default DA voice",
+      "type": "Free"
     },
     "researcher": {
       "voice_name": "Ava (Premium)",

@@ -1,5 +1,5 @@
 ---
-name: fabric
+name: Fabric
 description: Intelligent pattern selection for Fabric CLI. Automatically selects the right pattern from 242+ specialized prompts based on your intent - threat modeling, analysis, summarization, content creation, extraction, and more. USE WHEN processing content, analyzing data, creating summaries, threat modeling, or transforming text.
 ---
 
@@ -11,13 +11,13 @@ description: Intelligent pattern selection for Fabric CLI. Automatically selects
 
 ```bash
 # Check if Fabric repo exists
-if [ ! -d "$HOME/.claude/skills/fabric/fabric-repo" ]; then
+if [ ! -d "$HOME/.claude/skills/Fabric/fabric-repo" ]; then
   echo "Fabric repository not found. Cloning..."
   cd "$HOME/.claude/skills/fabric"
   git clone https://github.com/danielmiessler/fabric.git fabric-repo
   echo "Fabric repository cloned successfully."
 else
-  echo "Fabric repository found at $HOME/.claude/skills/fabric/fabric-repo"
+  echo "Fabric repository found at $HOME/.claude/skills/Fabric/fabric-repo"
 fi
 ```
 
@@ -270,7 +270,7 @@ fabric "your text here" -p [pattern]
 
 ## 🔄 Updating Patterns
 
-The Fabric repository is included as a snapshot in `${PAI_DIR}/skills/fabric/fabric-repo/`.
+The Fabric repository is included as a snapshot in `${PAI_DIR}/skills/Fabric/fabric-repo/`.
 
 **To update to latest patterns:**
 
@@ -280,8 +280,8 @@ cd /tmp
 git clone --depth 1 https://github.com/danielmiessler/fabric.git
 
 # Copy new patterns to PAI
-rm -rf ${PAI_DIR}/skills/fabric/fabric-repo
-cp -r fabric ${PAI_DIR}/skills/fabric/fabric-repo
+rm -rf ${PAI_DIR}/skills/Fabric/fabric-repo
+cp -r fabric ${PAI_DIR}/skills/Fabric/fabric-repo
 
 # Cleanup
 rm -rf /tmp/fabric
@@ -299,7 +299,7 @@ fabric --updatepatterns
 **To see all available patterns:**
 
 ```bash
-ls ${PAI_DIR}/skills/fabric/fabric-repo/data/patterns/
+ls ${PAI_DIR}/skills/Fabric/fabric-repo/data/patterns/
 # OR from your local Fabric install:
 ls ~/.config/fabric/patterns/
 ```
@@ -376,10 +376,10 @@ cat wisdom.txt | fabric -p create_5_sentence_summary
 
 ## 📖 Supplementary Resources
 
-**Full Pattern List:** `ls ${PAI_DIR}/skills/fabric/fabric-repo/data/patterns/`
-**Fabric Repo:** `${PAI_DIR}/skills/fabric/fabric-repo/`
+**Full Pattern List:** `ls ${PAI_DIR}/skills/Fabric/fabric-repo/data/patterns/`
+**Fabric Repo:** `${PAI_DIR}/skills/Fabric/fabric-repo/`
 **Fabric Documentation:** https://github.com/danielmiessler/fabric
-**Pattern Templates:** See `${PAI_DIR}/skills/fabric/fabric-repo/data/patterns/official_pattern_template/`
+**Pattern Templates:** See `${PAI_DIR}/skills/Fabric/fabric-repo/data/patterns/official_pattern_template/`
 
 ## 🔑 Key Insight
 

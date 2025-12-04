@@ -1,0 +1,126 @@
+# Gitleaks Configuration for PAI Repository
+# https://github.com/gitleaks/gitleaks
+
+title = "PAI Gitleaks Configuration"
+
+# Extend the default gitleaks rules
+[extend]
+useDefault = true
+
+# Custom rules for PAI-specific secrets
+[[rules]]
+id = "anthropic-api-key"
+description = "Anthropic API Key"
+regex = '''(?i)(anthropic[_-]?api[_-]?key|ANTHROPIC_API_KEY)\s*[=:]\s*["']?(sk-ant-[a-zA-Z0-9-_]{40,})["']?'''
+keywords = ["anthropic", "sk-ant"]
+entropy = 3.5
+
+[[rules]]
+id = "elevenlabs-api-key"
+description = "ElevenLabs API Key"
+regex = '''(?i)(elevenlabs[_-]?api[_-]?key|ELEVENLABS_API_KEY)\s*[=:]\s*["']?([a-f0-9]{32})["']?'''
+keywords = ["elevenlabs"]
+
+[[rules]]
+id = "perplexity-api-key"
+description = "Perplexity API Key"
+regex = '''(?i)(perplexity[_-]?api[_-]?key|PERPLEXITY_API_KEY)\s*[=:]\s*["']?(pplx-[a-zA-Z0-9]{48,})["']?'''
+keywords = ["perplexity", "pplx-"]
+
+[[rules]]
+id = "openai-api-key"
+description = "OpenAI API Key"
+regex = '''(?i)(openai[_-]?api[_-]?key|OPENAI_API_KEY)\s*[=:]\s*["']?(sk-[a-zA-Z0-9]{48,})["']?'''
+keywords = ["openai", "sk-"]
+
+[[rules]]
+id = "google-api-key"
+description = "Google API Key"
+regex = '''(?i)(google[_-]?api[_-]?key|GOOGLE_API_KEY)\s*[=:]\s*["']?(AIza[a-zA-Z0-9_-]{35})["']?'''
+keywords = ["google", "AIza"]
+
+[[rules]]
+id = "brightdata-api-key"
+description = "Bright Data API Key"
+regex = '''(?i)(brightdata|bright[_-]?data)[_-]?(api[_-]?key|token)\s*[=:]\s*["']?([a-zA-Z0-9_-]{32,})["']?'''
+keywords = ["brightdata"]
+
+[[rules]]
+id = "apify-api-key"
+description = "Apify API Key"
+regex = '''(?i)(apify[_-]?api[_-]?key|APIFY_TOKEN)\s*[=:]\s*["']?(apify_api_[a-zA-Z0-9]{32,})["']?'''
+keywords = ["apify"]
+
+[[rules]]
+id = "private-key-file"
+description = "Private Key File"
+regex = '''-----BEGIN (RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'''
+keywords = ["BEGIN", "PRIVATE KEY"]
+
+[[rules]]
+id = "jwt-token"
+description = "JWT Token"
+regex = '''eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*'''
+keywords = ["eyJ"]
+entropy = 3.5
+
+[[rules]]
+id = "oauth-token"
+description = "OAuth Access Token"
+regex = '''"access_token"\s*:\s*"([a-zA-Z0-9_-]{20,})"'''
+keywords = ["access_token"]
+
+# Allowlist for false positives and example files
+[allowlist]
+description = "Global allowlist for PAI"
+
+# Files that are allowed to contain placeholder/example secrets
+paths = [
+  '''\.env\.example$''',
+  '''\.claude/\.env\.example$''',
+  '''SECURITY\.md$''',
+  '''\.pai-protected\.json$''',
+  '''PAI_SYNC_GUIDE\.md$''',
+  '''OAUTH_SETUP\.md$''',
+  '''\.gitleaks\.toml$''',
+  '''node_modules/''',
+  '''\.git/''',
+  # OAuth client code (contains JWT parsing, not secrets)
+  '''oauth-client\.ts$''',
+  '''gemini-client\.ts$''',
+  # Compiled Go binary
+  '''gemini-oauth$''',
+  # Security testing templates (intentional example secrets)
+  '''ffuf/resources/''',
+  '''REQUEST_TEMPLATES\.md$''',
+  # Fabric patterns (security templates with example secrets)
+  '''fabric-repo/.*patterns/.*''',
+  '''fabric-repo/internal/plugins/''',
+  # Old documentation paths
+  '''documentation/''',
+  '''PAI_DIRECTORY/'''
+]
+
+# Specific regex patterns to allow (for documentation examples)
+regexes = [
+  '''your[-_]?api[-_]?key[-_]?here''',
+  '''sk-ant-\.\.\.''',
+  '''sk-\.\.\.''',
+  '''pplx-\.\.\.''',
+  '''your[-_]?.*[-_]?key''',
+  '''EXAMPLE[-_]?KEY''',
+  '''placeholder''',
+  '''<your[-_]?'''
+]
+
+# Stop words that indicate example/placeholder content
+stopwords = [
+  "example",
+  "placeholder",
+  "your-api-key",
+  "your_api_key",
+  "changeme",
+  "replace-me",
+  "todo",
+  "fixme"
+]

@@ -392,7 +392,7 @@ VALIDATION CHECKPOINTS:
 - Are data elements accurate and precise?
 - Do editorial elements enhance (not distract from) information?
 
-Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
+Sign "{{DA}}" small in bottom right corner in charcoal (#2D2D2D).
 ```
 
 ---
@@ -402,7 +402,7 @@ Sign "Kai" small in bottom right corner in charcoal (#2D2D2D).
 **Execute the visualization:**
 
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --prompt "[YOUR COMPREHENSIVE PROMPT]" \
   --size 2K \

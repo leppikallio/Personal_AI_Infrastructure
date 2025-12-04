@@ -8,9 +8,9 @@
  *   import { PAI_DIR, HOOKS_DIR, SKILLS_DIR } from './lib/pai-paths';
  */
 
-import { homedir } from 'os';
-import { resolve, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, resolve } from 'node:path';
 
 /**
  * Smart PAI_DIR detection with fallback
@@ -38,13 +38,13 @@ export const COMMANDS_DIR = join(PAI_DIR, 'commands');
 function validatePAIStructure(): void {
   if (!existsSync(PAI_DIR)) {
     console.error(`❌ PAI_DIR does not exist: ${PAI_DIR}`);
-    console.error(`   Expected ~/.claude or set PAI_DIR environment variable`);
+    console.error('   Expected ~/.claude or set PAI_DIR environment variable');
     process.exit(1);
   }
 
   if (!existsSync(HOOKS_DIR)) {
     console.error(`❌ PAI hooks directory not found: ${HOOKS_DIR}`);
-    console.error(`   Your PAI_DIR may be misconfigured`);
+    console.error('   Your PAI_DIR may be misconfigured');
     console.error(`   Current PAI_DIR: ${PAI_DIR}`);
     process.exit(1);
   }
@@ -59,7 +59,9 @@ validatePAIStructure();
  */
 export function getHistoryFilePath(subdir: string, filename: string): string {
   const now = new Date();
-  const pstDate = new Date(now.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' }));
+  const pstDate = new Date(
+    now.toLocaleString('en-US', { timeZone: process.env.TIME_ZONE || 'America/Los_Angeles' })
+  );
   const year = pstDate.getFullYear();
   const month = String(pstDate.getMonth() + 1).padStart(2, '0');
 

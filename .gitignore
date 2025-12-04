@@ -35,6 +35,7 @@ node_modules/
 .npm
 .yarn
 .pnp.*
+.bun/
 
 # IDE
 .vscode/
@@ -57,7 +58,27 @@ out/
 .cache/
 *.cache
 
+# Gitleaks reports
+gitleaks-report.*
+
 # Personal/Private data
 private/
 secrets/
 credentials/
+
+.claude/todos/*
+.claude/projects/*
+.claude/file-history/*
+.claude/debug/*
+.claude/statsig/*
+.claude/history/*
+.claude/shell-snapshots/*
+history.jsonl
+.claude/agent-sessions.json
+.claude/plugins/
+.claude/scratchpad/*
+.claude/agents/*test*
+.claude/commands/*test*
+.claude/plans
+.claude/.update.lock
+.claude/ide/

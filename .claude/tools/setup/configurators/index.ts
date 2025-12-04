@@ -2,14 +2,14 @@
  * Configurators - apply configuration changes
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { homedir } from 'os';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import Mustache from 'mustache';
-import { Transaction, writeAtomic } from '../core/transaction';
+import { type Transaction, writeAtomic } from '../core/transaction';
 import { plistTemplate } from '../templates/plist';
 import { profileTemplate } from '../templates/profile';
-import { shellTemplate, SHELL_MARKER_START, SHELL_MARKER_END } from '../templates/shell';
+import { SHELL_MARKER_END, SHELL_MARKER_START, shellTemplate } from '../templates/shell';
 
 export interface SetupConfig {
   paiDir: string;
@@ -28,9 +28,9 @@ export interface SetupConfig {
 function getBunPath(): string {
   // Check common locations
   const locations = [
-    join(homedir(), '.bun/bin/bun'),      // bun's default install
-    '/opt/homebrew/bin/bun',               // Apple Silicon homebrew
-    '/usr/local/bin/bun',                  // Intel homebrew / manual
+    join(homedir(), '.bun/bin/bun'), // bun's default install
+    '/opt/homebrew/bin/bun', // Apple Silicon homebrew
+    '/usr/local/bin/bun', // Intel homebrew / manual
   ];
 
   for (const loc of locations) {
@@ -110,7 +110,10 @@ export async function writePlist(config: SetupConfig, transaction: Transaction):
 /**
  * Update shell profile (.zshrc or .bashrc)
  */
-export async function updateShellProfile(config: SetupConfig, transaction: Transaction): Promise<string | null> {
+export async function updateShellProfile(
+  config: SetupConfig,
+  transaction: Transaction
+): Promise<string | null> {
   if (!config.updateShellProfile) {
     return null;
   }
@@ -143,7 +146,7 @@ export async function updateShellProfile(config: SetupConfig, transaction: Trans
     createdAt: new Date().toISOString().split('T')[0],
   };
   const shellConfig = Mustache.render(shellTemplate, data);
-  content = content.trimEnd() + '\n' + shellConfig;
+  content = `${content.trimEnd()}\n${shellConfig}`;
 
   await writeAtomic(profilePath, content);
 

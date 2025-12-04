@@ -8,7 +8,7 @@
 # It's designed to be friendly, informative, and safe.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/danielmiessler/Personal_AI_Infrastructure/main/setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/leppikallio/Personal_AI_Infrastructure/main/setup.sh | bash
 #
 # Or download and run manually:
 #   ./setup.sh
@@ -320,6 +320,7 @@ if [ -d "$PAI_DIR/.git" ]; then
         print_step "Updating PAI..."
         cd "$PAI_DIR"
         git pull
+        git submodule update --init --recursive
         print_success "PAI updated successfully!"
     else
         print_info "Using existing installation"
@@ -331,7 +332,13 @@ else
     mkdir -p "$(dirname "$PAI_DIR")"
 
     # Clone the repository
-    git clone https://github.com/danielmiessler/Personal_AI_Infrastructure.git "$PAI_DIR"
+    git clone https://github.com/leppikallio/Personal_AI_Infrastructure.git "$PAI_DIR"
+
+    # Initialize submodules (required for Fabric patterns)
+    print_step "Initializing submodules..."
+    cd "$PAI_DIR"
+    git submodule update --init --recursive
+    print_success "Submodules initialized!"
 
     print_success "PAI downloaded successfully!"
 fi
@@ -377,7 +384,7 @@ if [ "$SHOULD_ADD_CONFIG" = true ]; then
     print_step "Adding PAI environment variables to $SHELL_CONFIG..."
 
     # Ask for AI assistant name
-    AI_NAME=$(ask_input "What would you like to call your AI assistant?" "Kai")
+    AI_NAME=$(ask_input "What would you like to call your AI assistant?" "Marvin")
 
     # Ask for color
     echo ""
@@ -701,15 +708,14 @@ echo ""
 print_header "Resources"
 
 echo "  📖 Documentation: $PAI_DIR/documentation/"
-echo "  🌐 GitHub: https://github.com/danielmiessler/Personal_AI_Infrastructure"
-echo "  📝 Blog: https://danielmiessler.com/blog/personal-ai-infrastructure"
+echo "  🌐 GitHub: https://github.com/leppikallio/Personal_AI_Infrastructure"
 echo "  🎬 Video: https://youtu.be/iKwRWwabkEc"
 echo ""
 
 print_header "Support"
 
-echo "  🐛 Report issues: https://github.com/danielmiessler/Personal_AI_Infrastructure/issues"
-echo "  💬 Discussions: https://github.com/danielmiessler/Personal_AI_Infrastructure/discussions"
+echo "  🐛 Report issues: https://github.com/leppikallio/Personal_AI_Infrastructure/issues"
+echo "  💬 Discussions: https://github.com/leppikallio/Personal_AI_Infrastructure/discussions"
 echo "  ⭐ Star the repo to support the project!"
 echo ""
 

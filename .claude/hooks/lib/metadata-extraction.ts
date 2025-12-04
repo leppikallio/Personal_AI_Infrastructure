@@ -12,11 +12,11 @@
  */
 
 export interface AgentInstanceMetadata {
-  agent_instance_id?: string;      // "perplexity-researcher-1" (full ID)
-  agent_type?: string;              // "perplexity-researcher" (base type)
-  instance_number?: number;         // 1 (sequence number)
-  parent_session_id?: string;       // Session that spawned this agent
-  parent_task_id?: string;          // Task ID that spawned this agent
+  agent_instance_id?: string; // "perplexity-researcher-1" (full ID)
+  agent_type?: string; // "perplexity-researcher" (base type)
+  instance_number?: number; // 1 (sequence number)
+  parent_session_id?: string; // Session that spawned this agent
+  parent_task_id?: string; // Task ID that spawned this agent
 }
 
 /**
@@ -43,7 +43,7 @@ export function extractAgentInstanceId(
     const descMatch = description.match(/\[([a-z-]+-researcher)-(\d+)\]/);
     if (descMatch) {
       result.agent_type = descMatch[1];
-      result.instance_number = parseInt(descMatch[2], 10);
+      result.instance_number = Number.parseInt(descMatch[2], 10);
       result.agent_instance_id = `${result.agent_type}-${result.instance_number}`;
     }
   }
@@ -59,7 +59,7 @@ export function extractAgentInstanceId(
       const parts = result.agent_instance_id.match(/^([a-z-]+)-(\d+)$/);
       if (parts) {
         result.agent_type = parts[1];
-        result.instance_number = parseInt(parts[2], 10);
+        result.instance_number = Number.parseInt(parts[2], 10);
       }
     }
   }

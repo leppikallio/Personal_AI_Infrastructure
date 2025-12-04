@@ -1,24 +1,27 @@
 #!/usr/bin/env bun
 
-import { readFileSync, existsSync } from 'fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 // Voice mappings for different agent types
 const AGENT_VOICE_IDS: Record<string, string> = {
-  researcher: 'AXdMgz6evoL7OPd7eU12',
-  pentester: 'hmMWXCj9K7N5mCPcRkfC',
-  engineer: 'kmSVBPu7loj4ayNinwWM',
-  designer: 'ZF6FPAbjXT4488VcRRnw',
-  architect: 'muZKMsIDGYtIkjjiUS82',
-  writer: 'gfRt6Z3Z8aTbpLfexQ7N',
-  kai: 'jqcCZkN6Knx8BJ5TBdYR',
-  default: 'jqcCZkN6Knx8BJ5TBdYR'
+  researcher: 'EXAVITQu4vr4xnSDxMaL', // Sarah
+  pentester: 'cjVigY5qzO86Huf0OWal', // Eric
+  engineer: 'bIHbv24MWmeRgasZH58o', // Will
+  designer: 'Xb7hH8MSUJpSbSDYk0k2', // Alice
+  architect: 'JBFqnCBsd6RMkjVDRZzb', // George
+  writer: 'EXAVITQu4vr4xnSDxMaL', // Sarah
+  marvin: 'onwK4e9ZLuTAKqWW03F9', // Daniel
+  default: 'onwK4e9ZLuTAKqWW03F9', // Daniel
 };
 
 async function delay(ms: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, ms));
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function findTaskResult(transcriptPath: string, maxAttempts: number = 10): Promise<{ result: string | null, agentType: string | null }> {
+async function findTaskResult(
+  transcriptPath: string,
+  maxAttempts = 10
+): Promise<{ result: string | null; agentType: string | null }> {
   console.error(`📂 Looking for Task result in transcript: ${transcriptPath}`);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -35,34 +38,39 @@ async function findTaskResult(transcriptPath: string, maxAttempts: number = 10):
     try {
       const transcript = readFileSync(transcriptPath, 'utf-8');
       const lines = transcript.trim().split('\n');
-      
+
       // Search from the end of the transcript backwards
       for (let i = lines.length - 1; i >= 0; i--) {
         try {
           const entry = JSON.parse(lines[i]);
-          
+
           // Look for assistant messages that contain Task tool_use
           if (entry.type === 'assistant' && entry.message?.content) {
             for (const content of entry.message.content) {
               if (content.type === 'tool_use' && content.name === 'Task') {
-                console.error(`✅ Found Task invocation with subagent: ${content.input?.subagent_type}`);
+                console.error(
+                  `✅ Found Task invocation with subagent: ${content.input?.subagent_type}`
+                );
                 // Found a Task invocation, now look for its result
                 // The result should be in a subsequent user message
                 for (let j = i + 1; j < lines.length; j++) {
                   const resultEntry = JSON.parse(lines[j]);
                   if (resultEntry.type === 'user' && resultEntry.message?.content) {
                     for (const resultContent of resultEntry.message.content) {
-                      if (resultContent.type === 'tool_result' && resultContent.tool_use_id === content.id) {
+                      if (
+                        resultContent.type === 'tool_result' &&
+                        resultContent.tool_use_id === content.id
+                      ) {
                         // Found the matching Task result
                         const taskOutput = resultContent.content;
-                        
+
                         // Extract agent type from the output
                         let agentType = 'default';
                         const agentMatch = taskOutput.match(/Sub-agent\s+(\w+)\s+completed/i);
                         if (agentMatch) {
                           agentType = agentMatch[1].toLowerCase();
                         }
-                        
+
                         return { result: taskOutput, agentType };
                       }
                     }
@@ -71,29 +79,35 @@ async function findTaskResult(transcriptPath: string, maxAttempts: number = 10):
               }
             }
           }
-        } catch (e) {
+        } catch (_e) {
           // Invalid JSON line, skip
         }
       }
-    } catch (e) {
+    } catch (_e) {
       // Error reading file, will retry
     }
   }
-  
+
   return { result: null, agentType: null };
 }
 
-function extractCompletionMessage(taskOutput: string): { message: string | null, agentType: string | null } {
+function extractCompletionMessage(taskOutput: string): {
+  message: string | null;
+  agentType: string | null;
+} {
   console.error('🔍 DEBUG - Extracting from task output, length:', taskOutput.length);
   console.error('🔍 DEBUG - First 200 chars:', taskOutput.substring(0, 200));
   console.error('🔍 DEBUG - Last 200 chars:', taskOutput.substring(taskOutput.length - 200));
 
   // First, check for CUSTOM COMPLETED line (voice-optimized) - with or without emoji
-  const customCompletedMatch = taskOutput.match(/(?:🗣️\s*)?(?:\*+)?CUSTOM\s+COMPLETED:\s*(?:\*+)?\s*(.+?)(?:\n|$)/im);
+  const customCompletedMatch = taskOutput.match(
+    /(?:🗣️\s*)?(?:\*+)?CUSTOM\s+COMPLETED:\s*(?:\*+)?\s*(.+?)(?:\n|$)/im
+  );
 
   if (customCompletedMatch) {
     // Get the custom voice response
-    let customText = customCompletedMatch[1].trim()
+    const customText = customCompletedMatch[1]
+      .trim()
       .replace(/\[.*?\]/g, '') // Remove bracketed text like [Optional: ...]
       .replace(/\*+/g, '') // Remove asterisks
       .trim();
@@ -109,7 +123,7 @@ function extractCompletionMessage(taskOutput: string): { message: string | null,
         /\[AGENT:(\w+)\]/i,
         /Sub-agent\s+(\w+)\s+completed/i,
         /(\w+)\s+Agent\s+completed/i,
-        /🎯\s*COMPLETED:\s*\[AGENT:(\w+)\]/i
+        /🎯\s*COMPLETED:\s*\[AGENT:(\w+)\]/i,
       ];
 
       for (const pattern of agentTypePatterns) {
@@ -138,13 +152,13 @@ function extractCompletionMessage(taskOutput: string): { message: string | null,
     /COMPLETED:\s*\[AGENT:(\w+)\]\s*I\s+completed\s+(.+?)(?:\n|$)/is,
     /\[AGENT:(\w+)\]\s*I\s+completed\s+(.+?)(?:\.|!|\n|$)/is,
     // Generic pattern for current format
-    /🎯.*COMPLETED.*\[AGENT:(\w+)\]\s*I\s+completed\s+(.+?)(?:\n|$)/is
+    /🎯.*COMPLETED.*\[AGENT:(\w+)\]\s*I\s+completed\s+(.+?)(?:\n|$)/is,
   ];
 
   // First try to match agent-specific patterns
   for (const pattern of agentPatterns) {
     const match = taskOutput.match(pattern);
-    if (match && match[1] && match[2]) {
+    if (match?.[1] && match[2]) {
       const agentType = match[1].toLowerCase();
       let message = match[2].trim();
 
@@ -172,12 +186,12 @@ function extractCompletionMessage(taskOutput: string): { message: string | null,
     /🎯\s*COMPLETED:\s*(.+?)(?:\n|$)/i,
     /COMPLETED:\s*(.+?)(?:\n|$)/i,
     /Sub-agent\s+\w+\s+completed\s+(.+?)(?:\.|!|\n|$)/i,
-    /Agent\s+completed\s+(.+?)(?:\.|!|\n|$)/i
+    /Agent\s+completed\s+(.+?)(?:\.|!|\n|$)/i,
   ];
 
   for (const pattern of genericPatterns) {
     const match = taskOutput.match(pattern);
-    if (match && match[1]) {
+    if (match?.[1]) {
       let message = match[1].trim();
 
       // Clean up the message
@@ -186,11 +200,12 @@ function extractCompletionMessage(taskOutput: string): { message: string | null,
       message = message.replace(/\s+/g, ' ');
 
       // Only return if it's not a generic message
-      if (message &&
-          !message.match(/^(the\s+)?requested\s+task$/i) &&
-          !message.match(/^task$/i) &&
-          message.length > 5) {
-
+      if (
+        message &&
+        !message.match(/^(the\s+)?requested\s+task$/i) &&
+        !message.match(/^task$/i) &&
+        message.length > 5
+      ) {
         // Try to detect agent type from context
         let agentType = null;
         const agentMatch = taskOutput.match(/Sub-agent\s+(\w+)\s+completed/i);
@@ -213,11 +228,11 @@ async function main() {
   try {
     const decoder = new TextDecoder();
     const reader = Bun.stdin.stream().getReader();
-    
+
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 500);
     });
-    
+
     const readPromise = (async () => {
       while (true) {
         const { done, value } = await reader.read();
@@ -225,18 +240,18 @@ async function main() {
         input += decoder.decode(value, { stream: true });
       }
     })();
-    
+
     await Promise.race([readPromise, timeoutPromise]);
   } catch (e) {
     console.error('Failed to read input:', e);
     process.exit(0);
   }
-  
+
   if (!input) {
     console.log('No input received');
     process.exit(0);
   }
-  
+
   let transcriptPath: string;
   try {
     const parsed = JSON.parse(input);
@@ -245,35 +260,36 @@ async function main() {
     console.error('Invalid input JSON:', e);
     process.exit(0);
   }
-  
+
   if (!transcriptPath) {
     console.log('No transcript path provided');
     process.exit(0);
   }
-  
+
   // Wait for and find the Task result
   const { result: taskOutput, agentType } = await findTaskResult(transcriptPath);
-  
+
   if (!taskOutput) {
     console.log('No Task result found in transcript after waiting');
     process.exit(0);
   }
-  
+
   // Extract the completion message and agent type
-  const { message: completionMessage, agentType: extractedAgentType } = extractCompletionMessage(taskOutput);
-  
+  const { message: completionMessage, agentType: extractedAgentType } =
+    extractCompletionMessage(taskOutput);
+
   if (!completionMessage) {
     console.log('No specific completion message found in Task output');
     process.exit(0);
   }
-  
+
   // Use extracted agent type if available, otherwise use the one from task analysis
   const finalAgentType = extractedAgentType || agentType || 'default';
-  
+
   // Prepare the notification
   const fullMessage = completionMessage; // Message is already prepared with agent name
   const agentName = finalAgentType.charAt(0).toUpperCase() + finalAgentType.slice(1);
-  
+
   // Send to notification server
   try {
     await fetch('http://localhost:8888/notify', {
@@ -284,10 +300,10 @@ async function main() {
         message: fullMessage,
         voice_enabled: true,
         agent_type: finalAgentType,
-        voice_id: AGENT_VOICE_IDS[finalAgentType] || AGENT_VOICE_IDS.default
-      })
+        voice_id: AGENT_VOICE_IDS[finalAgentType] || AGENT_VOICE_IDS.default,
+      }),
     });
-    
+
     console.log(`✅ Sent: [${agentName}] ${fullMessage}`);
   } catch (e) {
     console.error('Failed to send notification:', e);

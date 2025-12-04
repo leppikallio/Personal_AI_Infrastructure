@@ -11,16 +11,16 @@ Real-time monitoring of PAI multi-agent activity with WebSocket streaming.
 
 ```bash
 # Start server and dashboard
-~/.claude/skills/observability/manage.sh start
+${PAI_DIR}/skills/Observability/manage.sh start
 
 # Stop everything
-~/.claude/skills/observability/manage.sh stop
+${PAI_DIR}/skills/Observability/manage.sh stop
 
 # Restart both
-~/.claude/skills/observability/manage.sh restart
+${PAI_DIR}/skills/Observability/manage.sh restart
 
 # Check status
-~/.claude/skills/observability/manage.sh status
+${PAI_DIR}/skills/Observability/manage.sh status
 ```
 
 ## Access Points
@@ -39,7 +39,7 @@ Real-time monitoring of PAI multi-agent activity with WebSocket streaming.
 - WebSocket live updates
 
 ### Data Sources
-- **Primary**: `~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
+- **Primary**: `${PAI_DIR}/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
 - **Format**: JSONL with structured event data
 - **Hooks**: Events logged automatically by PAI hook system
 
@@ -98,14 +98,14 @@ User: "is observability running?"
 
 ### Server
 ```bash
-cd ~/.claude/skills/observability/apps/server
+cd ${PAI_DIR}/skills/Observability/apps/server
 bun install
 bun run dev
 ```
 
 ### Client
 ```bash
-cd ~/.claude/skills/observability/apps/client
+cd ${PAI_DIR}/skills/Observability/apps/client
 bun install
 bun run dev
 ```
@@ -118,8 +118,8 @@ bun run dev
 - Restart: `./manage.sh restart`
 
 ### No events showing
-- Verify events file exists: `~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
-- Check hooks are configured in `~/.claude/settings.json`
+- Verify events file exists: `${PAI_DIR}/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
+- Check hooks are configured in `${PAI_DIR}/settings.json`
 - Try triggering an event (use any tool or agent)
 
 ### Port conflicts
@@ -130,7 +130,7 @@ bun run dev
 ## Files
 
 ```
-~/.claude/skills/observability/
+${PAI_DIR}/skills/Observability/
 ├── SKILL.md                          # This file
 ├── manage.sh                         # Control script
 ├── apps/
@@ -155,6 +155,6 @@ bun run dev
 ## Hook Integration
 
 For the observability dashboard to receive events, configure your PAI hooks to log to:
-`~/.claude/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
+`${PAI_DIR}/history/raw-outputs/YYYY-MM/YYYY-MM-DD_all-events.jsonl`
 
-The `capture-all-events.ts` hook in `~/.claude/hooks/` handles this automatically.
+The `capture-all-events.ts` hook in `${PAI_DIR}/hooks/` handles this automatically.

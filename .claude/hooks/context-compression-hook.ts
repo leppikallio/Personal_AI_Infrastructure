@@ -4,9 +4,9 @@
  * Extracts context information from transcript and notifies about compression
  */
 
-import { readFileSync } from 'fs';
-import { join } from 'path';
-import { homedir } from 'os';
+import { readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 interface NotificationPayload {
   title: string;
@@ -44,13 +44,13 @@ interface TranscriptEntry {
     content?: Array<{
       type: string;
       text: string;
-    }>
+    }>;
   };
   timestamp?: string;
 }
 
 /**
- * Send notification to the Kai notification server
+ * Send notification to the Marvin notification server
  */
 async function sendNotification(payload: NotificationPayload): Promise<void> {
   try {
@@ -59,7 +59,7 @@ async function sendNotification(payload: NotificationPayload): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-  } catch (error) {
+  } catch (_error) {
     // Silently handle notification failures
   }
 }
@@ -71,10 +71,10 @@ function getTranscriptStats(transcriptPath: string): { messageCount: number; isL
   try {
     const content = readFileSync(transcriptPath, 'utf-8');
     const lines = content.trim().split('\n');
-    
+
     let userMessages = 0;
     let assistantMessages = 0;
-    
+
     for (const line of lines) {
       if (line.trim()) {
         try {
@@ -89,46 +89,49 @@ function getTranscriptStats(transcriptPath: string): { messageCount: number; isL
         }
       }
     }
-    
+
     const totalMessages = userMessages + assistantMessages;
     const isLarge = totalMessages > 50; // Consider large if more than 50 messages
-    
+
     return { messageCount: totalMessages, isLarge };
-  } catch (error) {
+  } catch (_error) {
     return { messageCount: 0, isLarge: false };
   }
 }
 
 // Load voice configuration
-let kaiVoiceConfig: VoiceConfig;
+let marvinVoiceConfig: VoiceConfig;
 try {
-  const voicesPath = join(homedir(), 'Library/Mobile Documents/com~apple~CloudDocs/Claude/voice-server/voices.json');
+  const voicesPath = join(
+    homedir(),
+    'Library/Mobile Documents/com~apple~CloudDocs/Claude/voice-server/voices.json'
+  );
   const config: VoicesConfig = JSON.parse(readFileSync(voicesPath, 'utf-8'));
-  kaiVoiceConfig = config.voices.kai;
-} catch (e) {
-  // Fallback to hardcoded Kai voice config
-  kaiVoiceConfig = {
-    voice_name: "Jamie (Premium)",
+  marvinVoiceConfig = config.voices.marvin;
+} catch (_e) {
+  // Fallback to hardcoded Marvin voice config
+  marvinVoiceConfig = {
+    voice_id: 'onwK4e9ZLuTAKqWW03F9',
     rate_wpm: 263,
     rate_multiplier: 1.5,
-    description: "UK Male",
-    type: "Premium"
+    description: 'Default DA voice',
+    type: 'Free',
   };
 }
 
 async function main() {
   let hookInput: HookInput | null = null;
-  
+
   try {
     // Read the JSON input from stdin
     const decoder = new TextDecoder();
     const reader = Bun.stdin.stream().getReader();
     let input = '';
-    
+
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 500);
     });
-    
+
     const readPromise = (async () => {
       while (true) {
         const { done, value } = await reader.read();
@@ -136,44 +139,44 @@ async function main() {
         input += decoder.decode(value, { stream: true });
       }
     })();
-    
+
     await Promise.race([readPromise, timeoutPromise]);
-    
+
     if (input.trim()) {
       hookInput = JSON.parse(input) as HookInput;
     }
-  } catch (error) {
+  } catch (_error) {
     // Silently handle input errors
   }
-  
+
   // Determine the type of compression
   const compactType = hookInput?.compact_type || 'auto';
   let message = 'Compressing context to continue';
-  
+
   // Get transcript statistics if available
-  if (hookInput && hookInput.transcript_path) {
+  if (hookInput?.transcript_path) {
     const stats = getTranscriptStats(hookInput.transcript_path);
     if (stats.messageCount > 0) {
       if (compactType === 'manual') {
         message = `Manually compressing ${stats.messageCount} messages`;
       } else {
-        message = stats.isLarge 
+        message = stats.isLarge
           ? `Auto-compressing large context with ${stats.messageCount} messages`
           : `Compressing context with ${stats.messageCount} messages`;
       }
     }
   }
-  
-  // Send notification with voice (using Kai's voice from config)
+
+  // Send notification with voice (using Marvin's voice from config)
   await sendNotification({
-    title: 'Kai Context',
+    title: 'Marvin Context',
     message: message,
     voice_enabled: true,
-    voice_name: kaiVoiceConfig.voice_name,
-    rate: kaiVoiceConfig.rate_wpm,
+    voice_name: marvinVoiceConfig.voice_name,
+    rate: marvinVoiceConfig.rate_wpm,
     priority: 'low',
   });
-  
+
   process.exit(0);
 }
 

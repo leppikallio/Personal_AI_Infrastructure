@@ -1,0 +1,19 @@
+{
+  "user": {
+    "name": "Petteri",
+    "email": ""
+  },
+  "assistant": {
+    "name": "Marvin",
+    "color": "purple"
+  },
+  "paths": {
+    "pai_dir": "/Users/zuul/Projects/PAI/.claude"
+  },
+  "voice": {
+    "port": 8888,
+    "enabled": true
+  },
+  "created": "2025-12-04T12:45:00.000Z",
+  "version": "1.0.0"
+}

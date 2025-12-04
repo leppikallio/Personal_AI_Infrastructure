@@ -270,7 +270,7 @@ CRITICAL REQUIREMENTS:
 - Maintains UL aesthetic (black linework, flat color, imperfect)
 - Smart insight or humor (sophisticated, not silly)
 
-Sign "Kai" small in bottom right corner of final panel in charcoal (#2D2D2D).
+Sign "{{DA}}" small in bottom right corner of final panel in charcoal (#2D2D2D).
 ```
 
 ---
@@ -292,7 +292,7 @@ Sign "Kai" small in bottom right corner of final panel in charcoal (#2D2D2D).
 ### Step 5: Execute Generation
 
 ```bash
-bun run ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts \
+bun run ${PAI_DIR}/skills/Art/tools/generate-ulart-image.ts \
   --model nano-banana-pro \
   --prompt "[YOUR PROMPT]" \
   --size 2K \

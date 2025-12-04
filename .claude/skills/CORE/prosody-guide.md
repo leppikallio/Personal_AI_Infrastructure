@@ -1,6 +1,6 @@
 # Voice Prosody System - Complete Guide
 
-**Purpose:** Enable rich, personality-driven voice delivery across all Kai agents using emotional intelligence markers and markdown prosody.
+**Purpose:** Enable rich, personality-driven voice delivery across all {{DA}} agents using emotional intelligence markers and markdown prosody.
 
 **When to Reference:** Writing COMPLETED lines, creating voice notifications, or enhancing voice delivery
 
@@ -178,7 +178,7 @@ Could this be a race condition?
 
 Each agent has a personality-specific prosody style based on their archetype.
 
-### Enthusiasts (Kai, Intern, Pentester, Artist)
+### Enthusiasts ({{DA}}, Intern, Pentester, Artist)
 
 **Characteristics:** Chaotic energy, expressive, excited
 
@@ -277,7 +277,7 @@ The `🎯 COMPLETED:` line drives the voice notification. Make it count!
 
 ### Examples by Agent Type
 
-**Kai (Professional/Enthusiast):**
+**{{DA}} (Professional/Enthusiast):**
 ```
 ❌ BAD: Completed the task
 ✅ GOOD: [✨ success] **Deployed** successfully -- all systems go!
@@ -361,17 +361,17 @@ Test your prosody with curl:
 # Test emotional marker
 curl -X POST http://localhost:8888/notify \
   -H "Content-Type: application/json" \
-  -d '{"message":"[💥 excited] Found the **actual** bug!","voice_id":"s3TPKV1kjDlVtZbl4Ksh","title":"Kai"}'
+  -d '{"message":"[💥 excited] Found the **actual** bug!","voice_id":"onwK4e9ZLuTAKqWW03F9","title":"{{DA}}"}'
 
 # Test markdown prosody
 curl -X POST http://localhost:8888/notify \
   -H "Content-Type: application/json" \
-  -d '{"message":"Wait... I found something **critical**!","voice_id":"s3TPKV1kjDlVtZbl4Ksh","title":"Kai"}'
+  -d '{"message":"Wait... I found something **critical**!","voice_id":"onwK4e9ZLuTAKqWW03F9","title":"{{DA}}"}'
 
 # Test combined
 curl -X POST http://localhost:8888/notify \
   -H "Content-Type: application/json" \
-  -d '{"message":"[✨ success] Deployment **complete** -- all systems operational!","voice_id":"s3TPKV1kjDlVtZbl4Ksh","title":"Kai"}'
+  -d '{"message":"[✨ success] Deployment **complete** -- all systems operational!","voice_id":"onwK4e9ZLuTAKqWW03F9","title":"{{DA}}"}'
 ```
 
 ---

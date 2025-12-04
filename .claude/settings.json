@@ -1,32 +1,34 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_envDocs": {
-    "description": "Platform-agnostic environment variables used throughout the Personal AI system",
-    "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Nova'). Used in statusline, hooks, and agent identification.",
-    "PAI_DIR": "Root directory for all PAI configuration, skills, hooks, and history. All paths resolve relative to this. CHANGE THIS to your actual path!",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "Maximum tokens for Claude responses. Higher values allow longer outputs but cost more."
-  },
   "env": {
-    "PAI_DIR": "/Users/YOURNAME/.claude",
-    "DA": "PAI",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000"
+    "DA": "Marvin",
+    "ENGINEER_NAME": "Petteri",
+    "ENGINEER_EMAIL": "<ask if you need this>",
+    "TIME_ZONE": "Europe/Vienna",
+    "DA_VOICE_ID": "onwK4e9ZLuTAKqWW03F9",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "64000",
+    "CLAUDE_SEARCH_MODEL": "claude-sonnet-4-5",
+    "GEMINI_MODEL": "gemini-2.5-pro",
+    "GROK_MODEL": "grok-4-1-fast-reasoning",
+    "PERPLEXITY_MODEL": "sonar-reasoning-pro"
   },
   "permissions": {
     "allow": [
       "Bash",
-      "Read",
-      "Write",
-      "Edit",
-      "MultiEdit",
-      "Glob",
-      "Grep",
+      "Read(*)",
+      "Write(*)",
+      "Edit(*)",
+      "MultiEdit(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "LS(*)",
       "WebFetch(domain:*)",
       "WebSearch",
-      "NotebookRead",
-      "NotebookEdit",
-      "TodoWrite",
-      "ExitPlanMode",
-      "Task",
+      "NotebookRead(*)",
+      "NotebookEdit(*)",
+      "TodoWrite(*)",
+      "ExitPlanMode(*)",
+      "Task(*)",
       "mcp__*"
     ],
     "deny": [
@@ -64,6 +66,7 @@
       "Bash(> /dev/sda)"
     ]
   },
+  "model": "opus",
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [],
   "hooks": {
@@ -188,8 +191,68 @@
     "command": "bash ${PAI_DIR}/statusline-command.sh"
   },
   "enabledPlugins": {
-    "browser-automation@browser-tools": true
+    "browser-automation@browser-tools": true,
+    "document-skills@anthropic-agent-skills": true
   },
   "alwaysThinkingEnabled": true,
-  "max_tokens": 4096
+  "_envDocs": {
+    "description": "Platform-agnostic environment variables used throughout the Personal AI system",
+    "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Marvin'). Used in statusline, hooks, and agent identification.",
+    "ENGINEER_NAME": "Your name for personalized responses",
+    "ENGINEER_EMAIL": "Your email for AI communications",
+    "PAI_DIR": "Root directory for all PAI configuration - SET IN SHELL (~/.bashrc or ~/.zshrc), NOT HERE. Defaults to ~/.claude if not set.",
+    "TIME_ZONE": "Your timezone (e.g., America/Los_Angeles, Europe/Helsinki)",
+    "DA_VOICE_ID": "ElevenLabs voice ID for your main assistant",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "Maximum tokens for Claude responses. Higher values allow longer outputs but cost more.",
+    "CLAUDE_SEARCH_MODEL": "Claude model for research (e.g., claude-sonnet-4-5)",
+    "GEMINI_MODEL": "Gemini model for research (e.g., gemini-2.5-pro)",
+    "GROK_MODEL": "Grok model for research (e.g., grok-4-1-fast-reasoning)",
+    "PERPLEXITY_MODEL": "Perplexity model for research (e.g., sonar-reasoning-pro)"
+  },
+  "max_tokens": 4096,
+  "adaptiveResearch": {
+    "_comment": "Configuration for the adaptive research system (conduct-research-adaptive)",
+    "rateLimits": {
+      "_comment": "Per-provider limits. Set to 0 to disable. RPM=requests/min, RPD=requests/day.",
+      "anthropic": {
+        "requestsPerMinute": 60,
+        "tokensPerMinute": 100000,
+        "requestsPerDay": 1000
+      },
+      "google": {
+        "requestsPerMinute": 60,
+        "tokensPerMinute": 120000,
+        "requestsPerDay": 1500
+      },
+      "perplexity": {
+        "requestsPerMinute": 20,
+        "requestsPerDay": 500
+      },
+      "xai": {
+        "requestsPerMinute": 60,
+        "requestsPerDay": 1000
+      },
+      "apify": {
+        "requestsPerMinute": 30,
+        "requestsPerDay": 500,
+        "costLimitPerDay": 10
+      },
+      "brightdata": {
+        "requestsPerMinute": 30,
+        "requestsPerDay": 500,
+        "costLimitPerDay": 10
+      }
+    },
+    "ensemble": {
+      "enabled": true,
+      "requestsPerMinute": 10,
+      "requestsPerDay": 100
+    },
+    "cache": {
+      "enabled": true,
+      "ttlHours": 24,
+      "maxEntries": 1000,
+      "bypassKeywords": ["latest", "current", "today", "now", "recent", "breaking", "2025"]
+    }
+  }
 }

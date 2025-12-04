@@ -1,28 +1,4 @@
 #!/bin/bash
-#
-# PAI Statusline - Customizable status display for Claude Code
-#
-# CUSTOMIZATION:
-#   - This script sources ${PAI_DIR}/.env for API keys and configuration
-#   - Set PAI_SIMPLE_COLORS=1 in settings.json env for basic ANSI colors
-#     (fixes display issues on some terminals)
-#   - To add features requiring API keys (e.g., quotes), add keys to .env
-#   - Comment out any printf lines you don't want displayed
-#
-# LINES DISPLAYED:
-#   1. Greeting: DA name, model, directory, capabilities count
-#   2. MCPs: Active MCP servers with names
-#   3. Tokens: Daily usage and cost (requires ccusage)
-#
-# ENVIRONMENT VARIABLES (set in settings.json env section):
-#   DA            - Your assistant's name (default: "Assistant")
-#   DA_COLOR      - Name color: purple|blue|green|cyan|yellow|red|orange
-#   PAI_SIMPLE_COLORS - Set to "1" to use basic terminal colors
-#
-
-# Source .env for API keys and custom configuration
-claude_env="${PAI_DIR:-$HOME/.claude}/.env"
-[ -f "$claude_env" ] && source "$claude_env"
 
 # Read JSON input from stdin
 input=$(cat)
@@ -34,7 +10,6 @@ DA_COLOR="${DA_COLOR:-purple}"  # Color for the assistant name
 # Extract data from JSON input
 current_dir=$(echo "$input" | jq -r '.workspace.current_dir')
 model_name=$(echo "$input" | jq -r '.model.display_name')
-cc_version=$(echo "$input" | jq -r '.version // "unknown"')
 
 # Get directory name
 dir_name=$(basename "$current_dir")
@@ -48,7 +23,6 @@ CACHE_AGE=30   # 30 seconds for more real-time updates
 claude_dir="${PAI_DIR:-$HOME/.claude}"
 commands_count=0
 mcps_count=0
-fobs_count=0
 fabric_count=0
 
 # Count commands (optimized - direct ls instead of find)
@@ -56,20 +30,15 @@ if [ -d "$claude_dir/commands" ]; then
     commands_count=$(ls -1 "$claude_dir/commands/"*.md 2>/dev/null | wc -l | tr -d ' ')
 fi
 
-# Count MCPs from settings.json (single parse)
+# Count MCPs from ~/.claude.json (global Claude config)
 mcp_names_raw=""
-if [ -f "$claude_dir/settings.json" ]; then
-    mcp_data=$(jq -r '.mcpServers | keys | join(" "), length' "$claude_dir/settings.json" 2>/dev/null)
+claude_global_config="$HOME/.claude.json"
+if [ -f "$claude_global_config" ]; then
+    mcp_data=$(jq -r '.mcpServers | keys | join(" "), length' "$claude_global_config" 2>/dev/null)
     mcp_names_raw=$(echo "$mcp_data" | head -1)
     mcps_count=$(echo "$mcp_data" | tail -1)
 else
     mcps_count="0"
-fi
-
-# Count Services (optimized - count .md files directly)
-services_dir="${HOME}/Projects/FoundryServices/Services"
-if [ -d "$services_dir" ]; then
-    fobs_count=$(ls -1 "$services_dir/"*.md 2>/dev/null | wc -l | tr -d ' ')
 fi
 
 # Count Fabric patterns (optimized - count subdirectories)
@@ -82,6 +51,12 @@ fi
 # Get cached ccusage data - SAFE VERSION without background processes
 daily_tokens=""
 daily_cost=""
+project_cost=""
+session_cost=""
+
+# Reset date files
+PROJECT_RESET_FILE="$claude_dir/cost_reset_project"
+SESSION_RESET_FILE="$claude_dir/cost_reset_session"
 
 # Check if cache exists and load it
 if [ -f "$CACHE_FILE" ]; then
@@ -100,40 +75,79 @@ elif [ -f "$CACHE_FILE" ]; then
     fi
 fi
 
+# Helper function to extract cost from ccusage output
+extract_cost() {
+    local output="$1"
+    if [ -n "$output" ]; then
+        echo "$output" | awk -F'│' '{print $9}' | sed 's/^ *//;s/ *$//'
+    else
+        echo "\$0.00"
+    fi
+}
+
+# Helper function to run ccusage with timeout
+run_ccusage() {
+    local args="$1"
+    local result=""
+    if command -v gtimeout >/dev/null 2>&1; then
+        result=$(gtimeout 5 bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
+    elif command -v timeout >/dev/null 2>&1; then
+        result=$(timeout 5 bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
+    else
+        result=$(bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
+    fi
+    echo "$result"
+}
+
 if [ "$cache_needs_update" = true ]; then
     # Try to acquire lock (non-blocking)
     if mkdir "$LOCK_FILE" 2>/dev/null; then
         # We got the lock - update cache with timeout
         if command -v bunx >/dev/null 2>&1; then
-            # Run ccusage with a timeout (5 seconds for faster updates)
-            # Check if gtimeout is available (macOS), otherwise try timeout (Linux)
-            if command -v gtimeout >/dev/null 2>&1; then
-                ccusage_output=$(gtimeout 5 bunx ccusage 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-            elif command -v timeout >/dev/null 2>&1; then
-                ccusage_output=$(timeout 5 bunx ccusage 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-            else
-                # Fallback without timeout (but faster than before)
-                ccusage_output=$(bunx ccusage 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-            fi
+            # Get TOTAL cost (no date filter)
+            ccusage_output=$(run_ccusage "")
 
             if [ -n "$ccusage_output" ]; then
                 # Extract input/output tokens, removing commas and ellipsis
                 daily_input=$(echo "$ccusage_output" | awk -F'│' '{print $4}' | sed 's/[^0-9]//g' | head -c 10)
                 daily_output=$(echo "$ccusage_output" | awk -F'│' '{print $5}' | sed 's/[^0-9]//g' | head -c 10)
-                # Extract cost, keep the dollar sign
-                daily_cost=$(echo "$ccusage_output" | awk -F'│' '{print $9}' | sed 's/^ *//;s/ *$//')
+                daily_cost=$(extract_cost "$ccusage_output")
 
                 if [ -n "$daily_input" ] && [ -n "$daily_output" ]; then
                     daily_total=$((daily_input + daily_output))
                     daily_tokens=$(printf "%'d" "$daily_total" 2>/dev/null || echo "$daily_total")
-
-                    # Write to cache file (properly escape dollar sign)
-                    echo "daily_tokens=\"$daily_tokens\"" > "$CACHE_FILE"
-                    # Use printf to properly escape the dollar sign in the cost
-                    printf "daily_cost=\"%s\"\n" "${daily_cost//$/\\$}" >> "$CACHE_FILE"
-                    # Add timestamp for debugging
-                    echo "cache_updated=\"$(date)\"" >> "$CACHE_FILE"
                 fi
+            fi
+
+            # Get PROJECT cost (since project reset date)
+            if [ -f "$PROJECT_RESET_FILE" ]; then
+                project_date=$(cat "$PROJECT_RESET_FILE")
+                project_output=$(run_ccusage "--since $project_date")
+                project_cost=$(extract_cost "$project_output")
+            else
+                project_cost="$daily_cost"  # No reset = show total
+            fi
+
+            # Get SESSION cost (since today OR session reset, whichever is later)
+            today=$(date +%Y%m%d)
+            session_date="$today"  # Default to today (auto daily reset)
+            if [ -f "$SESSION_RESET_FILE" ]; then
+                stored_session=$(cat "$SESSION_RESET_FILE")
+                # Use whichever is more recent
+                if [[ "$stored_session" > "$today" ]] || [[ "$stored_session" == "$today" ]]; then
+                    session_date="$stored_session"
+                fi
+            fi
+            session_output=$(run_ccusage "--since $session_date")
+            session_cost=$(extract_cost "$session_output")
+
+            # Write to cache file
+            if [ -n "$daily_tokens" ]; then
+                echo "daily_tokens=\"$daily_tokens\"" > "$CACHE_FILE"
+                printf "daily_cost=\"%s\"\n" "${daily_cost//$/\\$}" >> "$CACHE_FILE"
+                printf "project_cost=\"%s\"\n" "${project_cost//$/\\$}" >> "$CACHE_FILE"
+                printf "session_cost=\"%s\"\n" "${session_cost//$/\\$}" >> "$CACHE_FILE"
+                echo "cache_updated=\"$(date)\"" >> "$CACHE_FILE"
             fi
         fi
 
@@ -203,39 +217,7 @@ MCP_DAEMON="$BRIGHT_BLUE"
 MCP_STRIPE="$LINE2_ACCENT"
 MCP_DEFAULT="$LINE2_PRIMARY"
 
-# Reset includes explicit background clear for terminal compatibility
-RESET='\033[0m\033[49m'
-
-# Simple colors mode - set PAI_SIMPLE_COLORS=1 if you have terminal display issues
-if [ "${PAI_SIMPLE_COLORS:-0}" = "1" ]; then
-    # Use basic ANSI colors instead of 24-bit RGB for terminal compatibility
-    BRIGHT_PURPLE='\033[35m'
-    BRIGHT_BLUE='\033[34m'
-    DARK_BLUE='\033[34m'
-    BRIGHT_GREEN='\033[32m'
-    DARK_GREEN='\033[32m'
-    BRIGHT_ORANGE='\033[33m'
-    BRIGHT_RED='\033[31m'
-    BRIGHT_CYAN='\033[36m'
-    BRIGHT_MAGENTA='\033[35m'
-    BRIGHT_YELLOW='\033[33m'
-    # Override derived colors
-    DA_DISPLAY_COLOR='\033[35m'
-    LINE1_PRIMARY='\033[35m'
-    LINE1_ACCENT='\033[35m'
-    MODEL_PURPLE='\033[35m'
-    LINE2_PRIMARY='\033[34m'
-    LINE2_ACCENT='\033[34m'
-    LINE3_PRIMARY='\033[32m'
-    LINE3_ACCENT='\033[32m'
-    COST_COLOR='\033[32m'
-    TOKENS_COLOR='\033[37m'
-    SEPARATOR_COLOR='\033[37m'
-    DIR_COLOR='\033[36m'
-    MCP_DAEMON='\033[34m'
-    MCP_STRIPE='\033[34m'
-    MCP_DEFAULT='\033[34m'
-fi
+RESET='\033[0m'
 
 # Format MCP names efficiently
 mcp_names_formatted=""
@@ -251,7 +233,13 @@ for mcp in $mcp_names_raw; do
         "Ref") formatted="${MCP_DEFAULT}Ref${RESET}" ;;
         "pai") formatted="${MCP_DEFAULT}Foundry${RESET}" ;;
         "playwright") formatted="${MCP_DEFAULT}Playwright${RESET}" ;;
-        *) formatted="${MCP_DEFAULT}${mcp^}${RESET}" ;;
+        "context7") formatted="${MCP_DEFAULT}Context7${RESET}" ;;
+        *)
+            # Capitalize first letter (bash 3.x compatible)
+            first_char=$(echo "${mcp:0:1}" | tr '[:lower:]' '[:upper:]')
+            rest="${mcp:1}"
+            formatted="${MCP_DEFAULT}${first_char}${rest}${RESET}"
+            ;;
     esac
 
     if [ -z "$mcp_names_formatted" ]; then
@@ -262,8 +250,8 @@ for mcp in $mcp_names_raw; do
 done
 
 # Output the full 3-line statusline
-# LINE 1 - Greeting with CC version
-printf "👋 ${DA_DISPLAY_COLOR}\"${DA_NAME} here, ready to go...\"${RESET} ${MODEL_PURPLE}Running CC ${cc_version}${RESET}${LINE1_PRIMARY} with ${MODEL_PURPLE}🧠 ${model_name}${RESET}${LINE1_PRIMARY} in ${DIR_COLOR}📁 ${dir_name}${RESET}\n"
+# LINE 1 - PURPLE theme with all counts
+printf "${DA_DISPLAY_COLOR}${DA_NAME}${RESET}${LINE1_PRIMARY} here, running on ${MODEL_PURPLE}🧠 ${model_name}${RESET}${LINE1_PRIMARY} in ${DIR_COLOR}📁 ${dir_name}${RESET}${LINE1_PRIMARY}, wielding: ${RESET}${LINE1_PRIMARY}⚙️ ${commands_count} Commands${RESET}${LINE1_PRIMARY}, ${RESET}${LINE1_PRIMARY}🔌 ${mcps_count} MCPs${RESET}${LINE1_PRIMARY}, and ${RESET}${LINE1_PRIMARY}📚 ${fabric_count} Patterns${RESET}\n"
 
 # LINE 2 - BLUE theme with MCP names
 printf "${LINE2_PRIMARY}🔌 MCPs${RESET}${LINE2_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${mcp_names_formatted}${RESET}\n"
@@ -272,7 +260,11 @@ printf "${LINE2_PRIMARY}🔌 MCPs${RESET}${LINE2_PRIMARY}${SEPARATOR_COLOR}: ${R
 # If we have cached data but it's empty, still show N/A
 tokens_display="${daily_tokens:-N/A}"
 cost_display="${daily_cost:-N/A}"
+project_display="${project_cost:-N/A}"
+session_display="${session_cost:-N/A}"
 if [ -z "$daily_tokens" ]; then tokens_display="N/A"; fi
 if [ -z "$daily_cost" ]; then cost_display="N/A"; fi
+if [ -z "$project_cost" ]; then project_display="N/A"; fi
+if [ -z "$session_cost" ]; then session_display="N/A"; fi
 
-printf "${LINE3_PRIMARY}💎 Total Tokens${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${LINE3_ACCENT}${tokens_display}${RESET}${LINE3_PRIMARY}  Total Cost${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${cost_display}${RESET}\n"
+printf "${LINE3_PRIMARY}💎 Total${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${cost_display}${RESET}${LINE3_PRIMARY}  📁 Project${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${project_display}${RESET}${LINE3_PRIMARY}  ⚡ Session${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${session_display}${RESET}\n"

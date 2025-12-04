@@ -2,11 +2,17 @@
  * Interactive prompts using @clack/prompts
  */
 
+import { execSync } from 'node:child_process';
+import { homedir } from 'node:os';
 import * as p from '@clack/prompts';
-import { homedir } from 'os';
-import { execSync } from 'child_process';
-import { validatePath, validateEmail, validateName, validateAssistantName, expandPath } from './validators';
 import type { SetupConfig } from './configurators';
+import {
+  expandPath,
+  validateAssistantName,
+  validateEmail,
+  validateName,
+  validatePath,
+} from './validators';
 
 /**
  * Try to get default values from git config
