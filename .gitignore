@@ -36,6 +36,8 @@ node_modules/
 .yarn
 .pnp.*
 .bun/
+*.bun-build
+*.tsbuildinfo
 
 # IDE
 .vscode/
