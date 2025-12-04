@@ -29,19 +29,13 @@
 
 **[Watch the full PAI walkthrough](https://youtu.be/iKwRWwabkEc)** | **[Read: The Real Internet of Things](https://danielmiessler.com/blog/real-internet-of-things)**
 
-<br/>
-
 ---
 
-<br/>
-
-## This project exists so that the best AI in the world is not only used by a few, but can be used by everyone.
+**The best AI in the world should be available to everyone, not just companies with massive engineering teams.**
 
 </div>
 
-<br/>
-
-Right now the most powerful AI setups are being built inside companies with massive engineering teams, and for the purpose of increasing efficiency and profits.
+Right now the most powerful AI setups are being built inside companies for efficiency and profits.
 
 That's all good, but I think the purpose of technology is to serve humans—not the other way around. These new AI frameworks should be available to everyone, including people not in technology, so that regular people can use it to help them flourish.
 
