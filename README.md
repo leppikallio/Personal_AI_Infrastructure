@@ -181,105 +181,115 @@ Each skill demonstrates the skills-as-containers pattern with routing, workflows
 
 <br/>
 
-## 🏗️ Architecture
+## 🏗️ The Thirteen Founding Principles
 
-PAI is built on 12 foundational principles:
+PAI is built on 13 foundational principles that define how to build reliable AI infrastructure.
 
-<table>
-<tr>
-<td width="50%" valign="top">
+Complete architecture documentation: [`.claude/skills/CORE/Architecture.md`](.claude/skills/CORE/Architecture.md)
 
-**π Scaffolding > Model**<br/>
-The infrastructure matters more than any single model
+---
 
-**π ENG / SRE**<br/>
-Treat AI systems like production engineering
+### 1. Clear Thinking + Prompting is King
 
-**π As Deterministic as Possible**<br/>
-Reduce randomness, increase reliability
+The quality of outcomes depends on the quality of thinking and prompts. Before any code, before any architecture—there must be clear thinking.
 
-**π Code Before Prompts**<br/>
-Write code first, wrap with prompts second
+<img src="docs/images/principle-01-clear-thinking.png" alt="Clear Thinking + Prompting" width="100%">
 
-**π UNIX Philosophy**<br/>
-Small, composable tools that do one thing well
+---
 
-**π CLI as Interface**<br/>
-Command line is the primary interaction layer
+### 2. Scaffolding > Model
 
-</td>
-<td width="50%" valign="top">
+The system architecture matters more than the underlying AI model. A well-structured system with good scaffolding will outperform a more powerful model with poor structure.
 
-**π Goal → Code → CLI → Prompts → Agent**<br/>
-The implementation hierarchy
+<img src="docs/images/principle-02-scaffolding.png" alt="Scaffolding > Model" width="100%">
 
-**π Spec / Test / Evals First**<br/>
-Define success before building
+---
 
-**π Meta / Self Updates**<br/>
-The system improves itself
+### 3. As Deterministic as Possible
 
-**π Custom Skill Management**<br/>
-3-tier architecture, routing, workflows, tools
+Favor predictable, repeatable outcomes over flexibility. Same input → Same output. Always.
 
-**π History**<br/>
-Automatic documentation of all work
+<img src="docs/images/principle-03-deterministic.png" alt="Deterministic Systems" width="100%">
 
-**π Custom Agent Personalities / Voices**<br/>
-Specialized agents for different tasks
+---
 
-</td>
-</tr>
-</table>
+### 4. Code Before Prompts
 
-Complete architecture: [`.claude/skills/CORE/CONSTITUTION.md`](.claude/skills/CORE/CONSTITUTION.md)
+Write code to solve problems, use prompts to orchestrate code. Prompts should never replicate functionality that code can provide.
 
-### Core Systems
+<img src="docs/images/principle-04-code-before-prompts.png" alt="Code Before Prompts" width="100%">
 
-<details open>
-<summary><strong>Skills Architecture</strong> — 3-tier progressive disclosure</summary>
+---
 
-<br/>
+### 5. Spec / Test / Evals First
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/skills-architecture.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/skills-architecture.png">
-  <img alt="Skills Architecture" src="docs/images/skills-architecture.png" width="800">
-</picture>
+Define expected behavior before writing implementation. If you can't specify it, you can't test it. If you can't test it, you can't trust it.
 
-Skills are self-contained containers with SKILL.md as the entry point. Workflows handle multi-step operations, tools provide CLI scripts, and docs contain reference material — all progressively loaded only when needed.
+<img src="docs/images/principle-05-spec-test-evals.png" alt="Spec / Test / Evals First" width="100%">
 
-</details>
+---
 
-<details>
-<summary><strong>Hook System</strong> — Event-driven automation</summary>
+### 6. UNIX Philosophy
 
-<br/>
+Do one thing well. Compose tools through standard interfaces. Build small, focused tools—compose them for complex operations.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hook-system.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/hook-system.png">
-  <img alt="Hook System" src="docs/images/hook-system.png" width="800">
-</picture>
+<img src="docs/images/principle-06-unix-philosophy.png" alt="UNIX Philosophy" width="100%">
 
-Hooks capture everything automatically — before tool execution, after tool execution, and on user feedback. Scripts like `capture-all-events.ts` and `capture-session-summary.ts` run invisibly to build context.
+---
 
-</details>
+### 7. ENG / SRE Principles
 
-<details>
-<summary><strong>History System</strong> — Automatic documentation (UOCS)</summary>
+Apply software engineering and site reliability practices to AI systems. AI infrastructure is infrastructure—treat it with the same rigor.
 
-<br/>
+<img src="docs/images/principle-07-eng-sre.png" alt="ENG / SRE Principles" width="100%">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/history-system.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/history-system.png">
-  <img alt="History System" src="docs/images/history-system.png" width="800">
-</picture>
+---
 
-Everything is captured, nothing is lost. Session work, tool outputs, and agent results flow into the history system, producing markdown files, JSONL logs, and timestamped entries organized by date.
+### 8. CLI as Interface
 
-</details>
+Every operation should be accessible via command line. If there's no CLI command for it, you can't script it or test it reliably.
+
+<img src="docs/images/principle-08-cli-interface.png" alt="CLI as Interface" width="100%">
+
+---
+
+### 9. Goal → Code → CLI → Prompts → Agents
+
+The proper development pipeline for any new feature. Each layer builds on the previous—skip a layer, get a shaky system.
+
+<img src="docs/images/principle-09-implementation-pipeline.png" alt="Implementation Pipeline" width="100%">
+
+---
+
+### 10. Meta / Self Update System
+
+The system should be able to improve itself. A system that can't update itself will stagnate.
+
+<img src="docs/images/principle-10-self-update.png" alt="Self-Improving System" width="100%">
+
+---
+
+### 11. Custom Skill Management
+
+Skills are the organizational unit for all domain expertise. Skills are how PAI scales—each new domain gets its own skill, maintaining organization as the system grows.
+
+<img src="docs/images/principle-11-skill-management.png" alt="Skill Architecture" width="100%">
+
+---
+
+### 12. Custom History System
+
+Automatic capture and preservation of valuable work. Memory makes intelligence compound. Without history, every session starts from zero.
+
+<img src="docs/images/principle-12-history-system.png" alt="History System" width="100%">
+
+---
+
+### 13. Custom Agent Personalities / Voices
+
+Specialized agents with distinct personalities for different tasks. Personality isn't decoration—it's functional.
+
+<img src="docs/images/principle-13-agent-personalities.png" alt="Agent Personalities" width="100%">
 
 <br/>
 
