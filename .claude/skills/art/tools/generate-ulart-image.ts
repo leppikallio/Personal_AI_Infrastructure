@@ -12,12 +12,24 @@
  * @see ${PAI_DIR}/skills/art/README.md
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
-import { extname, resolve } from 'node:path';
+import { extname, resolve, join } from 'node:path';
+import { homedir } from 'node:os';
+import { spawn } from 'node:child_process';
 import { ApiError, GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import Replicate from 'replicate';
+
+// ============================================================================
+// PAI Directory Configuration
+// ============================================================================
+
+/**
+ * PAI_DIR - Base directory for Personal AI Infrastructure
+ * Uses PAI_DIR environment variable with fallback to ~/.claude
+ */
+const PAI_DIR = process.env.PAI_DIR || join(homedir(), '.claude');
 
 // ============================================================================
 // Environment Loading
@@ -28,7 +40,7 @@ import Replicate from 'replicate';
  * This ensures API keys are available regardless of how the CLI is invoked
  */
 async function loadEnv(): Promise<void> {
-  const envPath = resolve(process.env.HOME!, '.claude/.env');
+  const envPath = join(PAI_DIR, '.env');
   try {
     const envContent = await readFile(envPath, 'utf-8');
     for (const line of envContent.split('\n')) {
@@ -59,7 +71,9 @@ async function loadEnv(): Promise<void> {
 // Types
 // ============================================================================
 
-type Model = 'flux' | 'nano-banana' | 'nano-banana-pro' | 'gpt-image-1';
+type Model = 'flux' | 'flux-pro' | 'flux-dev' | 'flux-schnell' | 'nano-banana' | 'nano-banana-pro' | 'gpt-image-1' | 'sdxl';
+type Preset = 'photorealistic' | 'cinematic' | 'artistic' | 'raw';
+type WorkflowPhase = 'composition' | 'refine' | 'detail' | 'upscale';
 type ReplicateSize =
   | '1:1'
   | '16:9'
@@ -75,6 +89,16 @@ type OpenAISize = '1024x1024' | '1536x1024' | '1024x1536';
 type GeminiSize = '1K' | '2K' | '4K';
 type Size = ReplicateSize | OpenAISize | GeminiSize;
 
+// SDXL scheduler options
+type SDXLScheduler =
+  | 'DDIM'
+  | 'DPMSolverMultistep'
+  | 'HeunDiscrete'
+  | 'KarrasDPM'
+  | 'K_EULER_ANCESTRAL'
+  | 'K_EULER'
+  | 'PNDM';
+
 interface CLIArgs {
   model: Model;
   prompt: string;
@@ -86,6 +110,20 @@ interface CLIArgs {
   transparent?: boolean; // Enable transparent background
   referenceImage?: string; // Reference image path (Nano Banana Pro only)
   removeBg?: boolean; // Remove background after generation using remove.bg API
+  // img2img parameters (SDXL and Flux-dev)
+  image?: string; // Input image for img2img mode
+  strength?: number; // Denoising strength (0-1, default 0.8)
+  guidance?: number; // Guidance scale (flux: 0-10, sdxl: 1-50)
+  steps?: number; // Inference steps (flux: 1-50, sdxl: 1-500)
+  negativePrompt?: string; // What to avoid (SDXL only)
+  scheduler?: SDXLScheduler; // Sampler (SDXL only)
+  // Photorealistic workflow support
+  preset?: Preset; // Preset configuration (e.g., 'photorealistic')
+  seed?: number; // Seed for reproducibility
+  batch?: number; // Number of images to generate for selection (1-10)
+  phase?: WorkflowPhase; // Workflow phase: composition, refine, detail, upscale
+  open?: boolean; // Open generated image(s) after creation
+  thumbnail?: boolean; // Generate 200px thumbnail after creation
 }
 
 // ============================================================================
@@ -96,6 +134,68 @@ const DEFAULTS = {
   model: 'flux' as Model,
   size: '16:9' as Size,
   output: '/tmp/ul-image.png',
+};
+
+// Preset configurations for different styles
+// Based on research: CFG 3.0-4.0 is optimal for FLUX (NOT 7-12 like old SD)
+
+const PRESETS = {
+  photorealistic: {
+    model: 'flux-pro' as Model, // flux-1.1-pro via Replicate
+    guidance: 3.5, // CFG scale - sweet spot for FLUX photorealism
+    steps: 28, // Optimal for flux-1.1-pro
+    strength: 0.35, // For refinement phase (img2img)
+    description: 'Optimal settings for photorealistic output',
+  },
+  cinematic: {
+    model: 'flux-pro' as Model,
+    guidance: 4.0, // Slightly higher for more dramatic contrast
+    steps: 30,
+    strength: 0.4,
+    description: 'Film/movie aesthetic with dramatic lighting',
+  },
+  artistic: {
+    model: 'flux-dev' as Model, // flux-dev allows more stylization
+    guidance: 5.0, // Higher CFG for more stylized results
+    steps: 35,
+    strength: 0.5,
+    description: 'Painterly/stylized artistic output',
+  },
+  raw: {
+    model: 'flux' as Model, // Base model, no frills
+    guidance: undefined, // Use model defaults
+    steps: undefined,
+    strength: undefined,
+    description: 'No preset defaults - pure model output',
+  },
+};
+
+// Legacy alias for compatibility
+const PHOTOREALISTIC_PRESET = PRESETS.photorealistic;
+
+// Phase-specific defaults for multi-step workflow
+const PHASE_DEFAULTS: Record<WorkflowPhase, Partial<CLIArgs>> = {
+  composition: {
+    // Focus on structure, not final quality
+    steps: 20,
+    guidance: 3.5,
+  },
+  refine: {
+    // Enhance realism while preserving composition
+    strength: 0.35,
+    steps: 28,
+    guidance: 3.5,
+  },
+  detail: {
+    // Inpainting for micro-fixes
+    strength: 0.5,
+    steps: 30,
+  },
+  upscale: {
+    // High quality upscaling
+    steps: 30,
+    strength: 0.2,
+  },
 };
 
 const REPLICATE_SIZES: ReplicateSize[] = [
@@ -126,6 +226,21 @@ const GEMINI_ASPECT_RATIOS: ReplicateSize[] = [
   '16:9',
   '21:9',
 ];
+
+// SDXL scheduler options
+const SDXL_SCHEDULERS: SDXLScheduler[] = [
+  'DDIM',
+  'DPMSolverMultistep',
+  'HeunDiscrete',
+  'KarrasDPM',
+  'K_EULER_ANCESTRAL',
+  'K_EULER',
+  'PNDM',
+];
+
+// SDXL sizes (width x height)
+const SDXL_SIZES = ['1024x1024', '1024x1536', '1536x1024'] as const;
+type SDXLSize = (typeof SDXL_SIZES)[number];
 
 // ============================================================================
 // Error Handling
@@ -221,66 +336,106 @@ function showHelp(): void {
   console.log(`
 generate-ulart-image - UL Image Generation CLI
 
-Generate Unsupervised Learning branded images using Flux 1.1 Pro, Nano Banana, or GPT-image-1.
+Generate images using Flux 1.1 Pro, SDXL, Nano Banana, Nano Banana Pro, or GPT-image-1.
+Supports text-to-image and image-to-image (img2img) workflows.
 
 USAGE:
   generate-ulart-image --model <model> --prompt "<prompt>" [OPTIONS]
 
 REQUIRED:
-  --model <model>      Model to use: flux, nano-banana, nano-banana-pro, gpt-image-1
+  --model <model>      Model to use: flux, sdxl, nano-banana, nano-banana-pro, gpt-image-1
   --prompt <text>      Image generation prompt (quote if contains spaces)
   --prompt-file <path> Read prompt from file (alternative to --prompt)
-                       Supports .txt, .md - ideal for long narrative prompts
+                       Supports .txt, .md with optional YAML frontmatter for parameters
 
 OPTIONS:
   --size <size>              Image size/aspect ratio (default: 16:9)
                              Replicate (flux, nano-banana): 1:1, 16:9, 3:2, 2:3, 3:4, 4:3, 4:5, 5:4, 9:16, 21:9
                              OpenAI (gpt-image-1): 1024x1024, 1536x1024, 1024x1536
-                             Gemini (nano-banana-pro): 1K, 2K, 4K (resolution); aspect ratio inferred from context or defaults to 16:9
+                             Gemini (nano-banana-pro): 1K, 2K, 4K (resolution)
+                             SDXL: 1024x1024, 1024x1536, 1536x1024
   --aspect-ratio <ratio>     Aspect ratio for Gemini nano-banana-pro (default: 16:9)
                              Options: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
   --output <path>            Output file path (default: /tmp/ul-image.png)
   --reference-image <path>   Reference image for style/composition guidance (Nano Banana Pro only)
-                             Accepts: PNG, JPEG, WebP images
-                             Model will use this image as visual reference while following text prompt
-  --transparent              Enable transparent background (adds transparency instructions to prompt)
-                             Note: Not all models support transparency natively; may require post-processing
+  --transparent              Enable transparent background instructions
   --remove-bg                Remove background after generation using remove.bg API
-                             Creates true transparency by removing the generated background
-  --creative-variations <n>  Generate N variations (appends -v1, -v2, etc. to output filename)
-                             Use with Marvin's be-creative skill for true prompt diversity
-                             CLI mode: generates N images with same prompt (tests model variability)
+  --creative-variations <n>  Generate N variations (appends -v1, -v2, etc.)
   --help, -h                 Show this help message
 
+IMG2IMG OPTIONS (SDXL and Flux):
+  --image <path>             Input image for img2img mode
+                             When provided with flux, auto-uses flux-dev instead of flux-1.1-pro
+  --strength <0-1>           Denoising strength (default: 0.8)
+                             Lower values preserve more of the original image
+  --guidance <number>        Guidance scale (flux: 0-10, sdxl: 1-50)
+  --steps <number>           Inference steps (flux: 1-50, sdxl: 1-500)
+  --negative-prompt <text>   What to avoid in generation (SDXL only)
+  --scheduler <name>         Sampler (SDXL only): DDIM, K_EULER, DPMSolverMultistep, etc.
+
+PRESET OPTIONS:
+  --preset <preset>          Apply style preset (photorealistic|cinematic|artistic|raw)
+                             photorealistic: flux-pro, guidance=3.5, steps=28
+                             cinematic: flux-pro, guidance=4.0, steps=30, dramatic
+                             artistic: flux-dev, guidance=5.0, steps=35, stylized
+                             raw: no defaults, pure model output
+  --seed <number>            Seed for reproducibility (use same seed for same result)
+  --batch <1-10>             Generate N variations for selection (default: 1)
+  --phase <phase>            Workflow phase: composition, refine, detail, upscale
+                             composition: Text2img for structure (steps=20)
+                             refine: img2img enhancement (strength=0.35)
+                             detail: Inpainting for micro-fixes (strength=0.5)
+                             upscale: High-quality upscaling (strength=0.2)
+  --open                     Open generated image(s) after creation (macOS: Preview)
+  --thumbnail                Generate 200px thumbnail in thumbs/ subdirectory
+
+YAML FRONTMATTER:
+  Prompt files (.md) can include YAML frontmatter for configuration:
+
+  ---
+  model: sdxl
+  image: /path/to/input.png
+  strength: 0.3
+  guidance: 6
+  steps: 30
+  negative_prompt: blurry, artifacts
+  ---
+  Your prompt text here...
+
+  CLI flags override frontmatter values.
+
 EXAMPLES:
-  # Generate blog header with Nano Banana Pro (16:9, 2K quality)
-  generate-ulart-image --model nano-banana-pro --prompt "Abstract UL illustration..." --size 2K --aspect-ratio 16:9
+  # Text-to-image with Flux
+  generate-ulart-image --model flux --prompt "Minimal geometric art..." --size 16:9
 
-  # Generate high-res 4K image with Nano Banana Pro
-  generate-ulart-image --model nano-banana-pro --prompt "Editorial cover..." --size 4K --aspect-ratio 3:2
+  # Text-to-image with SDXL
+  generate-ulart-image --model sdxl --prompt "Photorealistic landscape..." --size 1024x1024
 
-  # Generate blog header with original Nano Banana (16:9)
-  generate-ulart-image --model nano-banana --prompt "Abstract UL illustration..." --size 16:9
+  # img2img: Clean degraded image with SDXL (recommended for artifacts)
+  generate-ulart-image --model sdxl \\
+    --prompt "Clean render preserving composition" \\
+    --image /tmp/degraded.png \\
+    --strength 0.3 \\
+    --guidance 6 \\
+    --negative-prompt "blurry, artifacts, distorted" \\
+    --output /tmp/cleaned.png
 
-  # Generate square image with Flux
-  generate-ulart-image --model flux --prompt "Minimal geometric art..." --size 1:1 --output /tmp/header.png
+  # img2img: Using Flux (auto-routes to flux-dev)
+  generate-ulart-image --model flux \\
+    --prompt "Clean render of scene" \\
+    --image /tmp/degraded.png \\
+    --strength 0.3 \\
+    --output /tmp/cleaned.png
 
-  # Generate portrait with GPT-image-1
-  generate-ulart-image --model gpt-image-1 --prompt "Editorial cover..." --size 1024x1536
+  # img2img: All config in frontmatter
+  generate-ulart-image --prompt-file prompts/clean-scene.md --output /tmp/cleaned.png
 
-  # Generate 3 creative variations (for testing model variability)
-  generate-ulart-image --model gpt-image-1 --prompt "..." --creative-variations 3 --output /tmp/essay.png
-  # Outputs: /tmp/essay-v1.png, /tmp/essay-v2.png, /tmp/essay-v3.png
-
-  # Generate with reference image for style guidance (Nano Banana Pro only)
-  generate-ulart-image --model nano-banana-pro --prompt "Tokyo Night themed illustration..." \\
-    --reference-image /tmp/style-reference.png --size 2K --aspect-ratio 16:9
-
-NOTE: For true creative diversity with different prompts, use the creative workflow in Marvin which
-integrates the be-creative skill. CLI creative mode generates multiple images with the SAME prompt.
+  # Nano Banana Pro with reference image
+  generate-ulart-image --model nano-banana-pro --prompt "..." \\
+    --reference-image /tmp/style.png --size 2K --aspect-ratio 16:9
 
 ENVIRONMENT VARIABLES:
-  REPLICATE_API_TOKEN  Required for flux and nano-banana models
+  REPLICATE_API_TOKEN  Required for flux, sdxl, and nano-banana models
   OPENAI_API_KEY       Required for gpt-image-1 model
   GOOGLE_API_KEY       Required for nano-banana-pro model
   REMOVEBG_API_KEY     Required for --remove-bg flag
@@ -290,8 +445,8 @@ ERROR CODES:
   1  General error (invalid arguments, API error, file write error)
 
 MORE INFO:
-  Documentation: ${PAI_DIR}/skills/art/README.md
-  Source: ${PAI_DIR}/skills/art/tools/generate-ulart-image.ts
+  Documentation: \${PAI_DIR}/skills/art/README.md
+  Source: \${PAI_DIR}/skills/art/tools/generate-ulart-image.ts
 `);
   process.exit(0);
 }
@@ -344,15 +499,19 @@ function parseArgs(argv: string[]): CLIArgs {
       case 'model':
         if (
           value !== 'flux' &&
+          value !== 'flux-pro' &&
+          value !== 'flux-dev' &&
+          value !== 'flux-schnell' &&
           value !== 'nano-banana' &&
           value !== 'nano-banana-pro' &&
-          value !== 'gpt-image-1'
+          value !== 'gpt-image-1' &&
+          value !== 'sdxl'
         ) {
           throw new CLIError(
-            `Invalid model: ${value}. Must be: flux, nano-banana, nano-banana-pro, or gpt-image-1`
+            `Invalid model: ${value}. Must be: flux, flux-pro, flux-dev, flux-schnell, sdxl, nano-banana, nano-banana-pro, or gpt-image-1`
           );
         }
-        parsed.model = value;
+        parsed.model = value as Model;
         i++; // Skip next arg (value)
         break;
       case 'prompt':
@@ -388,6 +547,97 @@ function parseArgs(argv: string[]): CLIArgs {
         i++; // Skip next arg (value)
         break;
       }
+      // img2img parameters
+      case 'image':
+        if (!existsSync(value)) {
+          throw new CLIError(`Input image not found: ${value}`);
+        }
+        parsed.image = value;
+        i++; // Skip next arg (value)
+        break;
+      case 'strength': {
+        const strength = Number.parseFloat(value);
+        if (Number.isNaN(strength) || strength < 0 || strength > 1) {
+          throw new CLIError(`Invalid strength: ${value}. Must be 0-1`);
+        }
+        parsed.strength = strength;
+        i++; // Skip next arg (value)
+        break;
+      }
+      case 'guidance': {
+        const guidance = Number.parseFloat(value);
+        if (Number.isNaN(guidance) || guidance < 0) {
+          throw new CLIError(`Invalid guidance: ${value}. Must be a positive number`);
+        }
+        parsed.guidance = guidance;
+        i++; // Skip next arg (value)
+        break;
+      }
+      case 'steps': {
+        const steps = Number.parseInt(value, 10);
+        if (Number.isNaN(steps) || steps < 1) {
+          throw new CLIError(`Invalid steps: ${value}. Must be a positive integer`);
+        }
+        parsed.steps = steps;
+        i++; // Skip next arg (value)
+        break;
+      }
+      case 'negative-prompt':
+        parsed.negativePrompt = value;
+        i++; // Skip next arg (value)
+        break;
+      case 'scheduler':
+        if (!SDXL_SCHEDULERS.includes(value as SDXLScheduler)) {
+          throw new CLIError(
+            `Invalid scheduler: ${value}. Must be one of: ${SDXL_SCHEDULERS.join(', ')}`
+          );
+        }
+        parsed.scheduler = value as SDXLScheduler;
+        i++; // Skip next arg (value)
+        break;
+      // Photorealistic workflow options
+      case 'preset':
+        if (!['photorealistic', 'cinematic', 'artistic', 'raw'].includes(value)) {
+          throw new CLIError(`Invalid preset: ${value}. Must be: photorealistic, cinematic, artistic, or raw`);
+        }
+        parsed.preset = value as Preset;
+        i++; // Skip next arg (value)
+        break;
+      case 'seed': {
+        const seed = Number.parseInt(value, 10);
+        if (Number.isNaN(seed) || seed < 0) {
+          throw new CLIError(`Invalid seed: ${value}. Must be a non-negative integer`);
+        }
+        parsed.seed = seed;
+        i++; // Skip next arg (value)
+        break;
+      }
+      case 'batch': {
+        const batch = Number.parseInt(value, 10);
+        if (Number.isNaN(batch) || batch < 1 || batch > 10) {
+          throw new CLIError(`Invalid batch: ${value}. Must be 1-10`);
+        }
+        parsed.batch = batch;
+        i++; // Skip next arg (value)
+        break;
+      }
+      case 'phase':
+        if (!['composition', 'refine', 'detail', 'upscale'].includes(value)) {
+          throw new CLIError(
+            `Invalid phase: ${value}. Must be: composition, refine, detail, or upscale`
+          );
+        }
+        parsed.phase = value as WorkflowPhase;
+        i++; // Skip next arg (value)
+        break;
+      case 'open':
+        parsed.open = true;
+        // No value to skip - this is a boolean flag
+        break;
+      case 'thumbnail':
+        parsed.thumbnail = true;
+        // No value to skip - this is a boolean flag
+        break;
       default:
         throw new CLIError(`Unknown flag: ${flag}`);
     }
@@ -437,7 +687,15 @@ function parseArgs(argv: string[]): CLIArgs {
     if (!parsed.aspectRatio) {
       parsed.aspectRatio = '16:9';
     }
+  } else if (parsed.model === 'sdxl') {
+    // SDXL uses same sizes as OpenAI
+    if (!SDXL_SIZES.includes(parsed.size as SDXLSize)) {
+      throw new CLIError(
+        `Invalid size for sdxl: ${parsed.size}. Must be: ${SDXL_SIZES.join(', ')}`
+      );
+    }
   } else {
+    // flux variants, nano-banana use Replicate aspect ratios
     if (!REPLICATE_SIZES.includes(parsed.size as ReplicateSize)) {
       throw new CLIError(
         `Invalid size for ${parsed.model}: ${parsed.size}. Must be: ${REPLICATE_SIZES.join(', ')}`
@@ -445,7 +703,225 @@ function parseArgs(argv: string[]): CLIArgs {
     }
   }
 
+  // Validate img2img parameters
+  const fluxModels: Model[] = ['flux', 'flux-pro', 'flux-dev', 'flux-schnell'];
+  if (parsed.image) {
+    // img2img is only supported with sdxl and flux variants
+    if (parsed.model !== 'sdxl' && !fluxModels.includes(parsed.model)) {
+      throw new CLIError('--image (img2img) is only supported with --model sdxl or flux variants');
+    }
+  }
+
+  // Apply preset defaults (CLI flags still override)
+  if (parsed.preset && parsed.preset !== 'raw') {
+    const presetConfig = PRESETS[parsed.preset];
+    // Apply preset model if not explicitly set
+    if (parsed.model === DEFAULTS.model && presetConfig.model) {
+      parsed.model = presetConfig.model;
+    }
+    // Apply defaults for parameters not explicitly set
+    if (parsed.guidance === undefined && presetConfig.guidance !== undefined) {
+      parsed.guidance = presetConfig.guidance;
+    }
+    if (parsed.steps === undefined && presetConfig.steps !== undefined) {
+      parsed.steps = presetConfig.steps;
+    }
+    if (parsed.strength === undefined && presetConfig.strength !== undefined) {
+      parsed.strength = presetConfig.strength;
+    }
+    const emoji = parsed.preset === 'photorealistic' ? '📸' : parsed.preset === 'cinematic' ? '🎬' : '🎨';
+    console.log(`${emoji} ${parsed.preset} preset applied: model=${parsed.model}, guidance=${parsed.guidance}, steps=${parsed.steps}`);
+  }
+
+  // Apply phase-specific defaults
+  if (parsed.phase) {
+    const phaseDefaults = PHASE_DEFAULTS[parsed.phase];
+    if (phaseDefaults.steps !== undefined && parsed.steps === undefined) {
+      parsed.steps = phaseDefaults.steps;
+    }
+    if (phaseDefaults.strength !== undefined && parsed.strength === undefined) {
+      parsed.strength = phaseDefaults.strength;
+    }
+    if (phaseDefaults.guidance !== undefined && parsed.guidance === undefined) {
+      parsed.guidance = phaseDefaults.guidance;
+    }
+    console.log(`🔄 Phase "${parsed.phase}" defaults applied`);
+  }
+
+  // Warn about SDXL-only parameters when used with other models
+  if (parsed.negativePrompt && parsed.model !== 'sdxl') {
+    console.warn('⚠️  Warning: --negative-prompt is only supported by SDXL. It will be ignored.');
+  }
+  if (parsed.scheduler && parsed.model !== 'sdxl') {
+    console.warn('⚠️  Warning: --scheduler is only supported by SDXL. It will be ignored.');
+  }
+
+  // Validate guidance range based on model
+  if (parsed.guidance !== undefined) {
+    if (parsed.model === 'flux' && (parsed.guidance < 0 || parsed.guidance > 10)) {
+      throw new CLIError('Invalid guidance for flux: must be 0-10');
+    }
+    if (parsed.model === 'sdxl' && (parsed.guidance < 1 || parsed.guidance > 50)) {
+      throw new CLIError('Invalid guidance for sdxl: must be 1-50');
+    }
+  }
+
+  // Validate steps range based on model
+  if (parsed.steps !== undefined) {
+    if (parsed.model === 'flux' && (parsed.steps < 1 || parsed.steps > 50)) {
+      throw new CLIError('Invalid steps for flux: must be 1-50');
+    }
+    if (parsed.model === 'sdxl' && (parsed.steps < 1 || parsed.steps > 500)) {
+      throw new CLIError('Invalid steps for sdxl: must be 1-500');
+    }
+  }
+
   return parsed as CLIArgs;
+}
+
+// ============================================================================
+// YAML Frontmatter Parser
+// ============================================================================
+
+interface FrontmatterData {
+  model?: Model;
+  image?: string;
+  strength?: number;
+  guidance?: number;
+  steps?: number;
+  negative_prompt?: string;
+  scheduler?: SDXLScheduler;
+  size?: Size;
+  aspect_ratio?: ReplicateSize;
+}
+
+interface ParsedPromptFile {
+  frontmatter: FrontmatterData;
+  prompt: string;
+}
+
+/**
+ * Simple YAML frontmatter parser for prompt files
+ * Supports basic key: value pairs and multiline strings with |
+ */
+function parseYamlFrontmatter(content: string): FrontmatterData {
+  const data: FrontmatterData = {};
+  const lines = content.split('\n');
+  let currentKey: string | null = null;
+  let multilineValue: string[] = [];
+  let isMultiline = false;
+
+  for (const line of lines) {
+    // Handle multiline continuation
+    if (isMultiline) {
+      if (line.startsWith('  ') || line.startsWith('\t')) {
+        multilineValue.push(line.trim());
+        continue;
+      } else {
+        // End of multiline, save it
+        if (currentKey) {
+          (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
+        }
+        isMultiline = false;
+        currentKey = null;
+        multilineValue = [];
+      }
+    }
+
+    // Skip empty lines and comments
+    if (!line.trim() || line.trim().startsWith('#')) continue;
+
+    // Parse key: value
+    const colonIndex = line.indexOf(':');
+    if (colonIndex === -1) continue;
+
+    const key = line.slice(0, colonIndex).trim();
+    let value = line.slice(colonIndex + 1).trim();
+
+    // Check for multiline indicator
+    if (value === '|') {
+      isMultiline = true;
+      currentKey = key;
+      multilineValue = [];
+      continue;
+    }
+
+    // Remove quotes if present
+    if ((value.startsWith('"') && value.endsWith('"')) ||
+        (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+
+    // Convert to appropriate type based on key
+    switch (key) {
+      case 'model':
+        if (['flux', 'sdxl', 'nano-banana', 'nano-banana-pro', 'gpt-image-1'].includes(value)) {
+          data.model = value as Model;
+        }
+        break;
+      case 'image':
+        data.image = value;
+        break;
+      case 'strength':
+        data.strength = parseFloat(value);
+        break;
+      case 'guidance':
+        data.guidance = parseFloat(value);
+        break;
+      case 'steps':
+        data.steps = parseInt(value, 10);
+        break;
+      case 'negative_prompt':
+        data.negative_prompt = value;
+        break;
+      case 'scheduler':
+        if (SDXL_SCHEDULERS.includes(value as SDXLScheduler)) {
+          data.scheduler = value as SDXLScheduler;
+        }
+        break;
+      case 'size':
+        data.size = value as Size;
+        break;
+      case 'aspect_ratio':
+        data.aspect_ratio = value as ReplicateSize;
+        break;
+    }
+  }
+
+  // Handle trailing multiline
+  if (isMultiline && currentKey) {
+    (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
+  }
+
+  return data;
+}
+
+/**
+ * Parse a prompt file with optional YAML frontmatter
+ * Returns extracted frontmatter data and the remaining prompt text
+ */
+function parsePromptFile(fileContent: string): ParsedPromptFile {
+  const trimmedContent = fileContent.trim();
+
+  // Check if file starts with frontmatter delimiter
+  if (!trimmedContent.startsWith('---')) {
+    return { frontmatter: {}, prompt: trimmedContent };
+  }
+
+  // Find closing delimiter
+  const closingIndex = trimmedContent.indexOf('---', 3);
+  if (closingIndex === -1) {
+    // No closing delimiter, treat entire file as prompt
+    return { frontmatter: {}, prompt: trimmedContent };
+  }
+
+  // Extract frontmatter and prompt
+  const frontmatterContent = trimmedContent.slice(3, closingIndex).trim();
+  const promptContent = trimmedContent.slice(closingIndex + 3).trim();
+
+  const frontmatter = parseYamlFrontmatter(frontmatterContent);
+
+  return { frontmatter, prompt: promptContent };
 }
 
 // ============================================================================
@@ -497,11 +973,156 @@ async function removeBackground(imagePath: string): Promise<void> {
 // Image Generation
 // ============================================================================
 
+interface FluxImg2ImgOptions {
+  image?: string;
+  strength?: number;
+  guidance?: number;
+  steps?: number;
+  seed?: number;
+}
+
+// Result with seed for reproducibility logging
+interface FluxGenerationResult {
+  outputPath: string;
+  seed?: number;
+}
+
+// ============================================================================
+// Session Logging (Photorealistic Skill)
+// ============================================================================
+
+interface GenerationLogEntry {
+  timestamp: string;
+  session_date: string;
+  phase?: WorkflowPhase;
+  prompt: string;
+  model: Model;
+  seed?: number;
+  parameters: {
+    guidance?: number;
+    steps?: number;
+    strength?: number;
+    width?: number;
+    height?: number;
+  };
+  input_image?: string;
+  mask?: string;
+  output_image: string;
+  preset?: string;
+  size?: Size;
+}
+
+const PHOTOREALISTIC_LOG_DIR = join(PAI_DIR, 'history/photorealistic');
+
+/**
+ * Log a generation to the daily JSONL file.
+ * Called automatically after each successful image generation.
+ */
+function logGeneration(entry: GenerationLogEntry): void {
+  try {
+    // Ensure log directory exists
+    if (!existsSync(PHOTOREALISTIC_LOG_DIR)) {
+      mkdirSync(PHOTOREALISTIC_LOG_DIR, { recursive: true });
+    }
+
+    // Create daily log file path
+    const logFile = join(PHOTOREALISTIC_LOG_DIR, `${entry.session_date}.jsonl`);
+
+    // Append entry as JSONL (one JSON object per line)
+    appendFileSync(logFile, JSON.stringify(entry) + '\n');
+
+    console.log(`📝 Logged to ${logFile}`);
+  } catch (error) {
+    // Don't fail generation if logging fails - just warn
+    console.warn('⚠️ Failed to log generation:', error);
+  }
+}
+
+/**
+ * Open generated images with the system's default image viewer.
+ * On macOS, uses `open` command which opens images in Preview.
+ */
+function openImages(paths: string[]): void {
+  if (paths.length === 0) return;
+
+  try {
+    // On macOS, `open` can accept multiple files
+    const proc = spawn('open', paths, {
+      detached: true,
+      stdio: 'ignore',
+    });
+    proc.unref(); // Don't wait for the process
+    console.log(`📂 Opening ${paths.length} image(s) in Preview...`);
+  } catch (error) {
+    console.warn('⚠️ Failed to open images:', error);
+  }
+}
+
+/**
+ * Generate a 200px thumbnail using macOS sips command.
+ * Saves to thumbs/ subdirectory alongside original image.
+ */
+async function generateThumbnail(imagePath: string): Promise<string | undefined> {
+  try {
+    const dir = imagePath.substring(0, imagePath.lastIndexOf('/'));
+    const filename = imagePath.substring(imagePath.lastIndexOf('/') + 1);
+    const thumbDir = join(dir, 'thumbs');
+    const thumbPath = join(thumbDir, filename);
+
+    // Create thumbs directory if needed
+    if (!existsSync(thumbDir)) {
+      mkdirSync(thumbDir, { recursive: true });
+    }
+
+    // Copy original to thumb location first
+    const originalBuffer = await readFile(imagePath);
+    await writeFile(thumbPath, originalBuffer);
+
+    // Use sips to resize to 200px on longest edge
+    return new Promise((resolve) => {
+      const proc = spawn('sips', [
+        '--resampleHeightWidthMax', '200',
+        thumbPath,
+      ], {
+        stdio: 'pipe',
+      });
+
+      proc.on('close', (code) => {
+        if (code === 0) {
+          console.log(`🖼️  Thumbnail: ${thumbPath}`);
+          resolve(thumbPath);
+        } else {
+          console.warn('⚠️ Failed to generate thumbnail');
+          resolve(undefined);
+        }
+      });
+
+      proc.on('error', () => {
+        console.warn('⚠️ sips command not available');
+        resolve(undefined);
+      });
+    });
+  } catch (error) {
+    console.warn('⚠️ Failed to generate thumbnail:', error);
+    return undefined;
+  }
+}
+
+// Map model names to Replicate model IDs
+const FLUX_MODEL_MAP: Record<string, string> = {
+  'flux': 'black-forest-labs/flux-1.1-pro',
+  'flux-pro': 'black-forest-labs/flux-1.1-pro',
+  'flux-dev': 'black-forest-labs/flux-dev',
+  'flux-schnell': 'black-forest-labs/flux-schnell',
+};
+
 async function generateWithFlux(
   prompt: string,
   size: ReplicateSize,
-  output: string
-): Promise<void> {
+  output: string,
+  model: Model = 'flux-pro',
+  img2imgOptions?: FluxImg2ImgOptions
+): Promise<FluxGenerationResult> {
   const token = process.env.REPLICATE_API_TOKEN;
   if (!token) {
     throw new CLIError('Missing environment variable: REPLICATE_API_TOKEN');
@@ -509,20 +1130,112 @@ async function generateWithFlux(
 
   const replicate = new Replicate({ auth: token });
 
-  console.log('🎨 Generating with Flux 1.1 Pro...');
+  // Generate or use provided seed
+  const seed = img2imgOptions?.seed ?? Math.floor(Math.random() * 2147483647);
 
-  const result = await replicate.run('black-forest-labs/flux-1.1-pro', {
-    input: {
+  // Determine which model to use
+  let replicateModel = FLUX_MODEL_MAP[model] || FLUX_MODEL_MAP['flux-pro'];
+
+  // For img2img, flux-dev is required (1.1-pro doesn't support it)
+  if (img2imgOptions?.image && (model === 'flux' || model === 'flux-pro')) {
+    replicateModel = FLUX_MODEL_MAP['flux-dev'];
+  }
+
+  const modelName = replicateModel.split('/')[1];
+
+  // If img2img options provided
+  if (img2imgOptions?.image) {
+    console.log(`🎨 Generating with ${modelName} (img2img mode)...`);
+
+    // Read image and convert to data URI
+    const imageBuffer = await readFile(img2imgOptions.image);
+    const ext = img2imgOptions.image.toLowerCase().split('.').pop();
+    const mimeType =
+      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const imageDataUri = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+
+    const input: Record<string, unknown> = {
       prompt,
+      image: imageDataUri,
       aspect_ratio: size,
       output_format: 'png',
       output_quality: 95,
-      prompt_upsampling: false,
-    },
-  });
+      seed,
+    };
 
-  await writeFile(output, result);
+    // Add optional parameters if provided
+    if (img2imgOptions.strength !== undefined) {
+      input.prompt_strength = img2imgOptions.strength;
+    }
+    if (img2imgOptions.guidance !== undefined) {
+      input.guidance = img2imgOptions.guidance;
+    }
+    if (img2imgOptions.steps !== undefined) {
+      input.num_inference_steps = img2imgOptions.steps;
+    }
+
+    const result = await replicate.run(replicateModel as `${string}/${string}`, { input });
+
+    // flux-dev returns an array of FileOutput objects
+    const resultArray = result as Array<{ url?: () => string }>;
+    if (resultArray && resultArray.length > 0) {
+      const firstResult = resultArray[0];
+      // Handle FileOutput object from Replicate
+      if (typeof firstResult === 'object' && firstResult !== null) {
+        // FileOutput has a url() method or can be iterated
+        const url = firstResult.url ? firstResult.url() : String(firstResult);
+        const response = await fetch(url);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        await writeFile(output, buffer);
+      }
+    }
+    console.log(`✅ Image saved to ${output}`);
+    console.log(`🌱 Seed: ${seed} (use --seed ${seed} to reproduce)`);
+    return { outputPath: output, seed };
+  }
+
+  // Standard text-to-image
+  console.log(`🎨 Generating with ${modelName}...`);
+
+  const input: Record<string, unknown> = {
+    prompt,
+    aspect_ratio: size,
+    output_format: 'png',
+    output_quality: 95,
+    prompt_upsampling: false,
+    seed,
+  };
+
+  // Add guidance and steps if provided (for photorealistic preset)
+  if (img2imgOptions?.guidance !== undefined) {
+    input.guidance = img2imgOptions.guidance;
+  }
+  if (img2imgOptions?.steps !== undefined) {
+    input.num_inference_steps = img2imgOptions.steps;
+  }
+
+  const result = await replicate.run(replicateModel as `${string}/${string}`, { input });
+
+  // Handle different return types
+  if (Buffer.isBuffer(result)) {
+    await writeFile(output, result);
+  } else if (Array.isArray(result) && result.length > 0) {
+    const firstResult = result[0];
+    if (typeof firstResult === 'object' && firstResult !== null) {
+      const url = (firstResult as { url?: () => string }).url
+        ? (firstResult as { url: () => string }).url()
+        : String(firstResult);
+      const response = await fetch(url);
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await writeFile(output, buffer);
+    }
+  } else {
+    await writeFile(output, result as Buffer);
+  }
+
   console.log(`✅ Image saved to ${output}`);
+  console.log(`🌱 Seed: ${seed} (use --seed ${seed} to reproduce)`);
+  return { outputPath: output, seed };
 }
 
 async function generateWithNanoBanana(
@@ -579,6 +1292,93 @@ async function generateWithGPTImage(
 
   const imageBuffer = Buffer.from(imageData, 'base64');
   await writeFile(output, imageBuffer);
+  console.log(`✅ Image saved to ${output}`);
+}
+
+interface SDXLOptions {
+  image?: string;
+  strength?: number;
+  guidance?: number;
+  steps?: number;
+  negativePrompt?: string;
+  scheduler?: SDXLScheduler;
+}
+
+async function generateWithSDXL(
+  prompt: string,
+  size: SDXLSize,
+  output: string,
+  options?: SDXLOptions
+): Promise<void> {
+  const token = process.env.REPLICATE_API_TOKEN;
+  if (!token) {
+    throw new CLIError('Missing environment variable: REPLICATE_API_TOKEN');
+  }
+
+  const replicate = new Replicate({ auth: token });
+
+  // Parse size into width and height
+  const [width, height] = size.split('x').map(Number);
+
+  const isImg2Img = !!options?.image;
+
+  if (isImg2Img) {
+    console.log('🎨 Generating with SDXL (img2img mode)...');
+  } else {
+    console.log('🎨 Generating with SDXL...');
+  }
+
+  const input: Record<string, unknown> = {
+    prompt,
+    width,
+    height,
+    num_outputs: 1,
+    output_format: 'png',
+  };
+
+  // Add optional parameters
+  if (options?.negativePrompt) {
+    input.negative_prompt = options.negativePrompt;
+  }
+  if (options?.guidance !== undefined) {
+    input.guidance_scale = options.guidance;
+  }
+  if (options?.steps !== undefined) {
+    input.num_inference_steps = options.steps;
+  }
+  if (options?.scheduler) {
+    input.scheduler = options.scheduler;
+  }
+
+  // Handle img2img mode
+  if (options?.image) {
+    // Read image and convert to data URI
+    const imageBuffer = await readFile(options.image);
+    const ext = options.image.toLowerCase().split('.').pop();
+    const mimeType =
+      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const imageDataUri = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
+
+    input.image = imageDataUri;
+    if (options.strength !== undefined) {
+      input.prompt_strength = options.strength;
+    }
+  }
+
+  const result = await replicate.run(
+    'stability-ai/sdxl:7762fd07cf82c948538e41f63f77d685e02b063e37e496e96eefd46c929f9bdc',
+    { input }
+  );
+
+  // SDXL returns an array of URLs
+  const resultArray = result as string[];
+  if (resultArray && resultArray.length > 0) {
+    const imageUrl = resultArray[0];
+    const response = await fetch(imageUrl);
+    const buffer = Buffer.from(await response.arrayBuffer());
+    await writeFile(output, buffer);
+  }
+
   console.log(`✅ Image saved to ${output}`);
 }
 
@@ -801,7 +1601,83 @@ async function main(): Promise<void> {
     // Read prompt from file if --prompt-file was provided
     if (args.promptFile) {
       console.log(`📄 Reading prompt from ${args.promptFile}...`);
-      args.prompt = (await readFile(args.promptFile, 'utf-8')).trim();
+      const fileContent = await readFile(args.promptFile, 'utf-8');
+      const { frontmatter, prompt: parsedPrompt } = parsePromptFile(fileContent);
+
+      // Set prompt from file
+      args.prompt = parsedPrompt;
+
+      // Log if frontmatter was found
+      if (Object.keys(frontmatter).length > 0) {
+        console.log('📋 Found YAML frontmatter configuration');
+      }
+
+      // Merge frontmatter values with CLI args (CLI takes precedence)
+      // Model from frontmatter (if not specified on CLI, use frontmatter)
+      if (frontmatter.model && args.model === DEFAULTS.model) {
+        args.model = frontmatter.model;
+        console.log(`   model: ${args.model}`);
+      }
+
+      // Size from frontmatter
+      if (frontmatter.size && args.size === DEFAULTS.size) {
+        args.size = frontmatter.size;
+        console.log(`   size: ${args.size}`);
+      }
+
+      // Aspect ratio from frontmatter
+      if (frontmatter.aspect_ratio && !args.aspectRatio) {
+        args.aspectRatio = frontmatter.aspect_ratio;
+        console.log(`   aspect_ratio: ${args.aspectRatio}`);
+      }
+
+      // img2img parameters from frontmatter (CLI wins if specified)
+      if (frontmatter.image && !args.image) {
+        // Validate the frontmatter image path
+        if (!existsSync(frontmatter.image)) {
+          throw new CLIError(`Input image from frontmatter not found: ${frontmatter.image}`);
+        }
+        args.image = frontmatter.image;
+        console.log(`   image: ${args.image}`);
+      }
+
+      if (frontmatter.strength !== undefined && args.strength === undefined) {
+        args.strength = frontmatter.strength;
+        console.log(`   strength: ${args.strength}`);
+      }
+
+      if (frontmatter.guidance !== undefined && args.guidance === undefined) {
+        args.guidance = frontmatter.guidance;
+        console.log(`   guidance: ${args.guidance}`);
+      }
+
+      if (frontmatter.steps !== undefined && args.steps === undefined) {
+        args.steps = frontmatter.steps;
+        console.log(`   steps: ${args.steps}`);
+      }
+
+      if (frontmatter.negative_prompt && !args.negativePrompt) {
+        args.negativePrompt = frontmatter.negative_prompt;
+        console.log(`   negative_prompt: ${args.negativePrompt.slice(0, 50)}...`);
+      }
+
+      if (frontmatter.scheduler && !args.scheduler) {
+        args.scheduler = frontmatter.scheduler;
+        console.log(`   scheduler: ${args.scheduler}`);
+      }
+
+      // Validate merged args for consistency
+      if (args.image && args.model !== 'sdxl' && args.model !== 'flux') {
+        throw new CLIError('img2img (--image) is only supported with model sdxl or flux');
+      }
+
+      // Warn about SDXL-only features with wrong model
+      if (args.negativePrompt && args.model !== 'sdxl') {
+        console.warn('⚠️  Warning: negative_prompt is only supported by SDXL. It will be ignored.');
+      }
+      if (args.scheduler && args.model !== 'sdxl') {
+        console.warn('⚠️  Warning: scheduler is only supported by SDXL. It will be ignored.');
+      }
     }
 
     // Enhance prompt for transparency if requested
@@ -827,14 +1703,70 @@ async function main(): Promise<void> {
       const basePath = args.output.replace(/\.png$/, '');
       const promises: Promise<void>[] = [];
 
+      // Build img2img options for flux (includes seed and params even without image for photorealistic)
+      const fluxImg2ImgOptions: FluxImg2ImgOptions | undefined =
+        args.image || args.seed !== undefined || args.guidance !== undefined || args.steps !== undefined
+        ? {
+            image: args.image,
+            strength: args.strength,
+            guidance: args.guidance,
+            steps: args.steps,
+            seed: args.seed,
+          }
+        : undefined;
+
+      // Build SDXL options
+      const sdxlOptions: SDXLOptions | undefined =
+        args.image || args.negativePrompt || args.guidance || args.steps || args.scheduler
+          ? {
+              image: args.image,
+              strength: args.strength,
+              guidance: args.guidance,
+              steps: args.steps,
+              negativePrompt: args.negativePrompt,
+              scheduler: args.scheduler,
+            }
+          : undefined;
+
+      const fluxModels: Model[] = ['flux', 'flux-pro', 'flux-dev', 'flux-schnell'];
+
+      // Helper to log each variation
+      const logVariation = (varOutput: string, seed?: number) => {
+        const now = new Date();
+        const sessionDate = now.toISOString().split('T')[0];
+        logGeneration({
+          timestamp: now.toISOString(),
+          session_date: sessionDate,
+          phase: args.phase,
+          prompt: finalPrompt,
+          model: args.model,
+          seed: seed ?? args.seed,
+          parameters: {
+            guidance: args.guidance,
+            steps: args.steps,
+            strength: args.strength,
+          },
+          input_image: args.image,
+          output_image: resolve(varOutput),
+          preset: args.preset,
+          size: args.size,
+        });
+      };
+
       for (let i = 1; i <= args.creativeVariations; i++) {
         const varOutput = `${basePath}-v${i}.png`;
         console.log(`Variation ${i}/${args.creativeVariations}: ${varOutput}`);
 
-        if (args.model === 'flux') {
-          promises.push(generateWithFlux(finalPrompt, args.size as ReplicateSize, varOutput));
+        if (fluxModels.includes(args.model)) {
+          promises.push(
+            generateWithFlux(finalPrompt, args.size as ReplicateSize, varOutput, args.model, fluxImg2ImgOptions)
+              .then((result) => { logVariation(varOutput, result.seed); })
+          );
         } else if (args.model === 'nano-banana') {
-          promises.push(generateWithNanoBanana(finalPrompt, args.size as ReplicateSize, varOutput));
+          promises.push(
+            generateWithNanoBanana(finalPrompt, args.size as ReplicateSize, varOutput)
+              .then(() => { logVariation(varOutput); })
+          );
         } else if (args.model === 'nano-banana-pro') {
           promises.push(
             generateWithNanoBananaPro(
@@ -843,21 +1775,79 @@ async function main(): Promise<void> {
               args.aspectRatio!,
               varOutput,
               args.referenceImage
-            )
+            ).then(() => { logVariation(varOutput); })
           );
         } else if (args.model === 'gpt-image-1') {
-          promises.push(generateWithGPTImage(finalPrompt, args.size as OpenAISize, varOutput));
+          promises.push(
+            generateWithGPTImage(finalPrompt, args.size as OpenAISize, varOutput)
+              .then(() => { logVariation(varOutput); })
+          );
+        } else if (args.model === 'sdxl') {
+          promises.push(
+            generateWithSDXL(finalPrompt, args.size as SDXLSize, varOutput, sdxlOptions)
+              .then(() => { logVariation(varOutput); })
+          );
         }
       }
 
       await Promise.all(promises);
       console.log(`\n✅ Generated ${args.creativeVariations} variations`);
+
+      // Open images if requested
+      if (args.open) {
+        const variationPaths = Array.from({ length: args.creativeVariations }, (_, i) =>
+          `${basePath}-v${i + 1}.png`
+        );
+        openImages(variationPaths);
+      }
+
+      // Generate thumbnails if requested
+      if (args.thumbnail) {
+        const variationPaths = Array.from({ length: args.creativeVariations }, (_, i) =>
+          `${basePath}-v${i + 1}.png`
+        );
+        await Promise.all(variationPaths.map(generateThumbnail));
+      }
       return;
     }
 
+    // Build img2img options for flux (single image mode, includes seed and params)
+    const fluxImg2ImgOptions: FluxImg2ImgOptions | undefined =
+      args.image || args.seed !== undefined || args.guidance !== undefined || args.steps !== undefined
+      ? {
+          image: args.image,
+          strength: args.strength,
+          guidance: args.guidance,
+          steps: args.steps,
+          seed: args.seed,
+        }
+      : undefined;
+
+    // Build SDXL options (single image mode)
+    const sdxlOptions: SDXLOptions | undefined =
+      args.image || args.negativePrompt || args.guidance || args.steps || args.scheduler
+        ? {
+            image: args.image,
+            strength: args.strength,
+            guidance: args.guidance,
+            steps: args.steps,
+            negativePrompt: args.negativePrompt,
+            scheduler: args.scheduler,
+          }
+        : undefined;
+
     // Standard single image generation
-    if (args.model === 'flux') {
-      await generateWithFlux(finalPrompt, args.size as ReplicateSize, args.output);
+    const fluxModels: Model[] = ['flux', 'flux-pro', 'flux-dev', 'flux-schnell'];
+    let generationResult: FluxGenerationResult | undefined;
+
+    if (fluxModels.includes(args.model)) {
+      generationResult = await generateWithFlux(
+        finalPrompt,
+        args.size as ReplicateSize,
+        args.output,
+        args.model,
+        fluxImg2ImgOptions
+      );
     } else if (args.model === 'nano-banana') {
       await generateWithNanoBanana(finalPrompt, args.size as ReplicateSize, args.output);
     } else if (args.model === 'nano-banana-pro') {
@@ -870,11 +1860,44 @@ async function main(): Promise<void> {
       );
     } else if (args.model === 'gpt-image-1') {
       await generateWithGPTImage(finalPrompt, args.size as OpenAISize, args.output);
+    } else if (args.model === 'sdxl') {
+      await generateWithSDXL(finalPrompt, args.size as SDXLSize, args.output, sdxlOptions);
     }
+
+    // Auto-log generation for photorealistic workflow
+    const now = new Date();
+    const sessionDate = now.toISOString().split('T')[0];
+    logGeneration({
+      timestamp: now.toISOString(),
+      session_date: sessionDate,
+      phase: args.phase,
+      prompt: finalPrompt,
+      model: args.model,
+      seed: generationResult?.seed ?? args.seed,
+      parameters: {
+        guidance: args.guidance,
+        steps: args.steps,
+        strength: args.strength,
+      },
+      input_image: args.image,
+      output_image: resolve(args.output),
+      preset: args.preset,
+      size: args.size,
+    });
 
     // Remove background if requested
     if (args.removeBg) {
       await removeBackground(args.output);
+    }
+
+    // Open image if requested
+    if (args.open) {
+      openImages([args.output]);
+    }
+
+    // Generate thumbnail if requested
+    if (args.thumbnail) {
+      await generateThumbnail(args.output);
     }
   } catch (error) {
     handleError(error);

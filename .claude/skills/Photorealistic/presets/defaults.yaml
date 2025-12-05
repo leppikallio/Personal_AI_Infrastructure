@@ -1,0 +1,51 @@
+# Photorealistic Workflow - Golden Config
+# These settings are research-validated for FLUX models (late 2025)
+# DO NOT modify unless you understand the implications
+
+# Default model
+model: flux-pro  # Options: flux-pro, flux-dev, flux-schnell
+
+# Core generation parameters
+generation:
+  guidance: 3.5      # CFG scale - FLUX sweet spot (NOT 7-12 like old SD)
+  steps: 28          # For flux-pro (20 for flux-dev, 1-4 for schnell)
+  sampler: dpmpp_2m  # Optimal sampler for FLUX
+  scheduler: sgm_uniform
+
+# Phase-specific overrides
+phases:
+  composition:
+    steps: 20        # Faster iteration
+    guidance: 3.5
+    batch: 4         # Default options to generate
+
+  refine:
+    steps: 28
+    guidance: 3.5
+    strength: 0.35   # Preserve composition (0.25-0.45 range)
+
+  detail:
+    steps: 30
+    strength: 0.5    # Allow meaningful change in masked area
+
+  upscale:
+    steps: 30
+    strength: 0.2    # Minimal change, just resolution
+
+# Output settings
+output:
+  format: png
+  quality: 95
+  resolution: 1024x1024  # Start size, upscale in final step
+
+# Seed logging
+seed:
+  log: true          # Always log seeds
+  format: "Seed: {seed} (use --seed {seed} to reproduce)"
+
+# Human-in-the-loop checkpoints
+checkpoints:
+  composition: true  # Must approve before refinement
+  refine: true       # Must approve before detail
+  detail: true       # Must approve before upscale
+  auto_advance: false  # NEVER auto-advance phases

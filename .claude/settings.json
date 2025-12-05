@@ -195,6 +195,21 @@
     "document-skills@anthropic-agent-skills": true
   },
   "alwaysThinkingEnabled": true,
+  "photorealistic": {
+    "_comment": "Configuration for the Photorealistic skill image generation",
+    "outputDir": "~/.claude/history/photorealistic",
+    "_outputDirNote": "Images stored in YYYY-MM-DD subdirectories alongside logs",
+    "defaultPreset": "photorealistic",
+    "_presetNote": "Available: photorealistic, cinematic, artistic, raw",
+    "defaultModel": "flux-pro",
+    "_modelNote": "Available: flux-pro, flux-dev, flux-schnell",
+    "defaultBatchSize": 4,
+    "_batchNote": "Number of composition options (1-10)",
+    "autoOpen": false,
+    "_autoOpenNote": "Automatically open images after generation (true/false)",
+    "generateThumbnails": true,
+    "_thumbnailNote": "Generate 200px thumbnails in thumbs/ subdirectory (true/false)"
+  },
   "_envDocs": {
     "description": "Platform-agnostic environment variables used throughout the Personal AI system",
     "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Marvin'). Used in statusline, hooks, and agent identification.",

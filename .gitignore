@@ -84,3 +84,4 @@ history.jsonl
 .claude/plans
 .claude/.update.lock
 .claude/ide/
+.claude/context/*
