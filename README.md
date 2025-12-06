@@ -15,7 +15,7 @@
 
 <br/>
 
-[![Version](https://img.shields.io/badge/version-0.9.0-blue?style=for-the-badge)](https://github.com/danielmiessler/Personal_AI_Infrastructure/releases)
+[![Version](https://img.shields.io/badge/version-0.9.1-blue?style=for-the-badge)](https://github.com/danielmiessler/Personal_AI_Infrastructure/releases)
 [![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-Powered-8B5CF6?style=for-the-badge)](https://claude.ai/code)
 
@@ -58,9 +58,9 @@ That's what PAI is. It's the foundation for building a Personal AI System that u
 PAI (Personal AI Infrastructure) is an open-source template for building your own AI-powered operating system. It's currently built on [Claude Code](https://claude.ai/code), but designed to be platform-independent — the architecture, skills, and workflows are structured so future migrations to other AI platforms are straightforward.
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/skills-architecture.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/images/skills-architecture.png">
-  <img alt="PAI Skills Architecture" src="docs/images/skills-architecture.png" width="800">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/pai-infrastructure.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/images/pai-infrastructure.png">
+  <img alt="PAI Infrastructure Architecture" src="docs/images/pai-infrastructure.png" width="800">
 </picture>
 
 | Component | Description |
@@ -75,9 +75,9 @@ PAI (Personal AI Infrastructure) is an open-source template for building your ow
 
 <br/>
 
-## What's New in v0.9.0
+## What's New in v0.9.1
 
-Big updates! PAI is now fully **platform-agnostic** — your AI identity, your system.
+Big updates! PAI is now fully **platform-agnostic** — your AI identity, your system. Plus improved cross-platform setup.
 
 | Feature | Description |
 |---------|-------------|

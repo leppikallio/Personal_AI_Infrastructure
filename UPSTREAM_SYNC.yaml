@@ -1,0 +1,55 @@
+# PAI Upstream Sync Tracking
+# This file helps future sessions quickly understand sync status with upstream
+
+upstream:
+  repo: https://github.com/danielmiessler/Personal_AI_Infrastructure.git
+  remote_name: upstream
+
+last_sync:
+  date: "2025-12-06"
+  upstream_commit: dabaea9b7ec12f8e080bbe52c4b8c1f85ec0fc23
+  upstream_tag: v0.9.1-pre  # Commits for v0.9.1 exist but tag not yet created
+  our_main_commit: 96058bd3d646d666fc6c6a5619e8d11591682e6e
+  notes: |
+    Synced images and doc improvements.
+    Kept our custom settings.json and setup.sh.
+
+# Files we deliberately keep different from upstream
+# DO NOT overwrite these during sync
+customized_files:
+  - path: .claude/settings.json
+    reason: Contains our personalized config (Marvin, API keys, custom skills)
+
+  - path: .claude/setup.sh
+    reason: Points to our fork, has our defaults (Marvin vs Kai)
+
+  - path: README.md
+    reason: Partial sync - take version badge but keep our repo URLs
+
+# Files/directories we add that upstream doesn't have
+our_additions:
+  - .claude/skills/Photorealistic/
+  - .claude/commands/photo-*.md
+  - .claude/commands/art-*.md
+  - .claude/skills/Art/get-art-config.ts
+  - package.json
+  - tsconfig.json
+  - UPSTREAM_SYNC.yaml
+
+# What to cherry-pick from upstream (docs/images mostly)
+sync_targets:
+  always_sync:
+    - docs/images/*.png
+    - docs/QUICKSTART.md
+
+  selective_sync:
+    - path: README.md
+      take: version badge, new images
+      skip: repo URLs, setup commands
+
+# Quick sync command reference
+commands:
+  fetch: git fetch upstream
+  compare: git log main..upstream/main --oneline
+  diff_file: git diff main upstream/main -- <file>
+  checkout_file: git checkout upstream/main -- <file>
