@@ -15,8 +15,8 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 
 // ============================================================================
 // Types
@@ -47,7 +47,7 @@ const DEFAULTS: PhotorealisticConfig = {
   outputDir: join(PAI_DIR, 'history/photorealistic'),
   defaultPreset: 'photorealistic',
   defaultModel: 'flux-pro',
-  defaultBatchSize: 4,
+  defaultBatchSize: 8,
   autoOpen: false,
   generateThumbnails: true,
 };
@@ -133,7 +133,9 @@ function outputSingleKey(config: PhotorealisticConfig, key: string): void {
     console.log(keyMap[key]);
   } else {
     console.error(`Unknown key: ${key}`);
-    console.error('Valid keys: outputDir, preset, model, batchSize, autoOpen, thumbnails, paiDir, all');
+    console.error(
+      'Valid keys: outputDir, preset, model, batchSize, autoOpen, thumbnails, paiDir, all'
+    );
     process.exit(1);
   }
 }

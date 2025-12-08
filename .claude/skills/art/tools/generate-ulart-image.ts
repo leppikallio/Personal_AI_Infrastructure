@@ -12,11 +12,11 @@
  * @see ${PAI_DIR}/skills/art/README.md
  */
 
-import { existsSync, mkdirSync, appendFileSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
-import { extname, resolve, join } from 'node:path';
-import { homedir } from 'node:os';
 import { spawn } from 'node:child_process';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { extname, join, resolve } from 'node:path';
 import { ApiError, GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import Replicate from 'replicate';
@@ -71,8 +71,16 @@ async function loadEnv(): Promise<void> {
 // Types
 // ============================================================================
 
-type Model = 'flux' | 'flux-pro' | 'flux-dev' | 'flux-schnell' | 'nano-banana' | 'nano-banana-pro' | 'gpt-image-1' | 'sdxl';
-type Preset = 'photorealistic' | 'cinematic' | 'artistic' | 'raw';
+type Model =
+  | 'flux'
+  | 'flux-pro'
+  | 'flux-dev'
+  | 'flux-schnell'
+  | 'nano-banana'
+  | 'nano-banana-pro'
+  | 'gpt-image-1'
+  | 'sdxl';
+type Preset = 'photorealistic' | 'strict' | 'cinematic' | 'artistic' | 'raw';
 type WorkflowPhase = 'composition' | 'refine' | 'detail' | 'upscale';
 type ReplicateSize =
   | '1:1'
@@ -88,6 +96,7 @@ type ReplicateSize =
 type OpenAISize = '1024x1024' | '1536x1024' | '1024x1536';
 type GeminiSize = '1K' | '2K' | '4K';
 type Size = ReplicateSize | OpenAISize | GeminiSize;
+type Skill = 'photorealistic' | 'art';
 
 // SDXL scheduler options
 type SDXLScheduler =
@@ -124,6 +133,7 @@ interface CLIArgs {
   phase?: WorkflowPhase; // Workflow phase: composition, refine, detail, upscale
   open?: boolean; // Open generated image(s) after creation
   thumbnail?: boolean; // Generate 200px thumbnail after creation
+  skill?: Skill; // Logging destination: photorealistic or art
 }
 
 // ============================================================================
@@ -138,6 +148,8 @@ const DEFAULTS = {
 
 // Preset configurations for different styles
 // Based on research: CFG 3.0-4.0 is optimal for FLUX (NOT 7-12 like old SD)
+// NOTE: For prompt exclusions ("no X"), use --strict or 'strict' preset with higher guidance
+// Better approach: Use positive specification instead of negation (e.g., "empty path" not "no benches")
 
 const PRESETS = {
   photorealistic: {
@@ -146,6 +158,13 @@ const PRESETS = {
     steps: 28, // Optimal for flux-1.1-pro
     strength: 0.35, // For refinement phase (img2img)
     description: 'Optimal settings for photorealistic output',
+  },
+  strict: {
+    model: 'flux-pro' as Model,
+    guidance: 6.0, // Higher guidance for stricter prompt adherence (helps with exclusions)
+    steps: 30, // Slightly more steps for quality at higher guidance
+    strength: 0.35,
+    description: 'Stricter prompt adherence - use when exclusions matter (no X, without Y)',
   },
   cinematic: {
     model: 'flux-pro' as Model,
@@ -171,7 +190,7 @@ const PRESETS = {
 };
 
 // Legacy alias for compatibility
-const PHOTOREALISTIC_PRESET = PRESETS.photorealistic;
+const _PHOTOREALISTIC_PRESET = PRESETS.photorealistic;
 
 // Phase-specific defaults for multi-step workflow
 const PHASE_DEFAULTS: Record<WorkflowPhase, Partial<CLIArgs>> = {
@@ -374,11 +393,13 @@ IMG2IMG OPTIONS (SDXL and Flux):
   --scheduler <name>         Sampler (SDXL only): DDIM, K_EULER, DPMSolverMultistep, etc.
 
 PRESET OPTIONS:
-  --preset <preset>          Apply style preset (photorealistic|cinematic|artistic|raw)
-                             photorealistic: flux-pro, guidance=3.5, steps=28
+  --preset <preset>          Apply style preset (photorealistic|strict|cinematic|artistic|raw)
+                             photorealistic: flux-pro, guidance=3.5, steps=28 (default)
+                             strict: flux-pro, guidance=6.0, steps=30 (for exclusions)
                              cinematic: flux-pro, guidance=4.0, steps=30, dramatic
                              artistic: flux-dev, guidance=5.0, steps=35, stylized
                              raw: no defaults, pure model output
+  --strict                   Shortcut for --preset strict (use when prompt has exclusions like "no X")
   --seed <number>            Seed for reproducibility (use same seed for same result)
   --batch <1-10>             Generate N variations for selection (default: 1)
   --phase <phase>            Workflow phase: composition, refine, detail, upscale
@@ -486,6 +507,14 @@ function parseArgs(argv: string[]): CLIArgs {
     }
     if (key === 'remove-bg') {
       parsed.removeBg = true;
+      continue;
+    }
+    if (key === 'open') {
+      parsed.open = true;
+      continue;
+    }
+    if (key === 'thumbnail') {
+      parsed.thumbnail = true;
       continue;
     }
 
@@ -597,11 +626,17 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       // Photorealistic workflow options
       case 'preset':
-        if (!['photorealistic', 'cinematic', 'artistic', 'raw'].includes(value)) {
-          throw new CLIError(`Invalid preset: ${value}. Must be: photorealistic, cinematic, artistic, or raw`);
+        if (!['photorealistic', 'strict', 'cinematic', 'artistic', 'raw'].includes(value)) {
+          throw new CLIError(
+            `Invalid preset: ${value}. Must be: photorealistic, strict, cinematic, artistic, or raw`
+          );
         }
         parsed.preset = value as Preset;
         i++; // Skip next arg (value)
+        break;
+      case 'strict':
+        // Shortcut for --preset strict (higher guidance for exclusion adherence)
+        parsed.preset = 'strict';
         break;
       case 'seed': {
         const seed = Number.parseInt(value, 10);
@@ -613,11 +648,12 @@ function parseArgs(argv: string[]): CLIArgs {
         break;
       }
       case 'batch': {
+        // Alias for creative-variations (batch is the same functionality)
         const batch = Number.parseInt(value, 10);
         if (Number.isNaN(batch) || batch < 1 || batch > 10) {
           throw new CLIError(`Invalid batch: ${value}. Must be 1-10`);
         }
-        parsed.batch = batch;
+        parsed.creativeVariations = batch;
         i++; // Skip next arg (value)
         break;
       }
@@ -630,13 +666,12 @@ function parseArgs(argv: string[]): CLIArgs {
         parsed.phase = value as WorkflowPhase;
         i++; // Skip next arg (value)
         break;
-      case 'open':
-        parsed.open = true;
-        // No value to skip - this is a boolean flag
-        break;
-      case 'thumbnail':
-        parsed.thumbnail = true;
-        // No value to skip - this is a boolean flag
+      case 'skill':
+        if (!['photorealistic', 'art'].includes(value)) {
+          throw new CLIError(`Invalid skill: ${value}. Must be: photorealistic or art`);
+        }
+        parsed.skill = value as Skill;
+        i++; // Skip next arg (value)
         break;
       default:
         throw new CLIError(`Unknown flag: ${flag}`);
@@ -729,8 +764,11 @@ function parseArgs(argv: string[]): CLIArgs {
     if (parsed.strength === undefined && presetConfig.strength !== undefined) {
       parsed.strength = presetConfig.strength;
     }
-    const emoji = parsed.preset === 'photorealistic' ? '📸' : parsed.preset === 'cinematic' ? '🎬' : '🎨';
-    console.log(`${emoji} ${parsed.preset} preset applied: model=${parsed.model}, guidance=${parsed.guidance}, steps=${parsed.steps}`);
+    const emoji =
+      parsed.preset === 'photorealistic' ? '📸' : parsed.preset === 'cinematic' ? '🎬' : '🎨';
+    console.log(
+      `${emoji} ${parsed.preset} preset applied: model=${parsed.model}, guidance=${parsed.guidance}, steps=${parsed.steps}`
+    );
   }
 
   // Apply phase-specific defaults
@@ -817,15 +855,14 @@ function parseYamlFrontmatter(content: string): FrontmatterData {
       if (line.startsWith('  ') || line.startsWith('\t')) {
         multilineValue.push(line.trim());
         continue;
-      } else {
-        // End of multiline, save it
-        if (currentKey) {
-          (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
-        }
-        isMultiline = false;
-        currentKey = null;
-        multilineValue = [];
       }
+      // End of multiline, save it
+      if (currentKey) {
+        (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
+      }
+      isMultiline = false;
+      currentKey = null;
+      multilineValue = [];
     }
 
     // Skip empty lines and comments
@@ -847,8 +884,10 @@ function parseYamlFrontmatter(content: string): FrontmatterData {
     }
 
     // Remove quotes if present
-    if ((value.startsWith('"') && value.endsWith('"')) ||
-        (value.startsWith("'") && value.endsWith("'"))) {
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
       value = value.slice(1, -1);
     }
 
@@ -863,13 +902,13 @@ function parseYamlFrontmatter(content: string): FrontmatterData {
         data.image = value;
         break;
       case 'strength':
-        data.strength = parseFloat(value);
+        data.strength = Number.parseFloat(value);
         break;
       case 'guidance':
-        data.guidance = parseFloat(value);
+        data.guidance = Number.parseFloat(value);
         break;
       case 'steps':
-        data.steps = parseInt(value, 10);
+        data.steps = Number.parseInt(value, 10);
         break;
       case 'negative_prompt':
         data.negative_prompt = value;
@@ -988,12 +1027,13 @@ interface FluxGenerationResult {
 }
 
 // ============================================================================
-// Session Logging (Photorealistic Skill)
+// Session Logging (Photorealistic & Art Skills)
 // ============================================================================
 
 interface GenerationLogEntry {
   timestamp: string;
   session_date: string;
+  skill?: Skill;
   phase?: WorkflowPhase;
   prompt: string;
   model: Model;
@@ -1013,23 +1053,28 @@ interface GenerationLogEntry {
 }
 
 const PHOTOREALISTIC_LOG_DIR = join(PAI_DIR, 'history/photorealistic');
+const ART_LOG_DIR = join(PAI_DIR, 'history/art');
 
 /**
  * Log a generation to the daily JSONL file.
  * Called automatically after each successful image generation.
+ * Logs to photorealistic or art directory based on skill parameter.
  */
-function logGeneration(entry: GenerationLogEntry): void {
+function logGeneration(entry: GenerationLogEntry, skill: Skill = 'photorealistic'): void {
   try {
+    // Select log directory based on skill
+    const logDir = skill === 'art' ? ART_LOG_DIR : PHOTOREALISTIC_LOG_DIR;
+
     // Ensure log directory exists
-    if (!existsSync(PHOTOREALISTIC_LOG_DIR)) {
-      mkdirSync(PHOTOREALISTIC_LOG_DIR, { recursive: true });
+    if (!existsSync(logDir)) {
+      mkdirSync(logDir, { recursive: true });
     }
 
     // Create daily log file path
-    const logFile = join(PHOTOREALISTIC_LOG_DIR, `${entry.session_date}.jsonl`);
+    const logFile = join(logDir, `${entry.session_date}.jsonl`);
 
     // Append entry as JSONL (one JSON object per line)
-    appendFileSync(logFile, JSON.stringify(entry) + '\n');
+    appendFileSync(logFile, `${JSON.stringify(entry)}\n`);
 
     console.log(`📝 Logged to ${logFile}`);
   } catch (error) {
@@ -1080,10 +1125,7 @@ async function generateThumbnail(imagePath: string): Promise<string | undefined>
 
     // Use sips to resize to 200px on longest edge
     return new Promise((resolve) => {
-      const proc = spawn('sips', [
-        '--resampleHeightWidthMax', '200',
-        thumbPath,
-      ], {
+      const proc = spawn('sips', ['--resampleHeightWidthMax', '200', thumbPath], {
         stdio: 'pipe',
       });
 
@@ -1110,7 +1152,7 @@ async function generateThumbnail(imagePath: string): Promise<string | undefined>
 
 // Map model names to Replicate model IDs
 const FLUX_MODEL_MAP: Record<string, string> = {
-  'flux': 'black-forest-labs/flux-1.1-pro',
+  flux: 'black-forest-labs/flux-1.1-pro',
   'flux-pro': 'black-forest-labs/flux-1.1-pro',
   'flux-dev': 'black-forest-labs/flux-dev',
   'flux-schnell': 'black-forest-labs/flux-schnell',
@@ -1150,8 +1192,7 @@ async function generateWithFlux(
     // Read image and convert to data URI
     const imageBuffer = await readFile(img2imgOptions.image);
     const ext = img2imgOptions.image.toLowerCase().split('.').pop();
-    const mimeType =
-      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
     const imageDataUri = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
 
     const input: Record<string, unknown> = {
@@ -1355,8 +1396,7 @@ async function generateWithSDXL(
     // Read image and convert to data URI
     const imageBuffer = await readFile(options.image);
     const ext = options.image.toLowerCase().split('.').pop();
-    const mimeType =
-      ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+    const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
     const imageDataUri = `data:${mimeType};base64,${imageBuffer.toString('base64')}`;
 
     input.image = imageDataUri;
@@ -1701,19 +1741,21 @@ async function main(): Promise<void> {
       );
 
       const basePath = args.output.replace(/\.png$/, '');
-      const promises: Promise<void>[] = [];
 
       // Build img2img options for flux (includes seed and params even without image for photorealistic)
       const fluxImg2ImgOptions: FluxImg2ImgOptions | undefined =
-        args.image || args.seed !== undefined || args.guidance !== undefined || args.steps !== undefined
-        ? {
-            image: args.image,
-            strength: args.strength,
-            guidance: args.guidance,
-            steps: args.steps,
-            seed: args.seed,
-          }
-        : undefined;
+        args.image ||
+        args.seed !== undefined ||
+        args.guidance !== undefined ||
+        args.steps !== undefined
+          ? {
+              image: args.image,
+              strength: args.strength,
+              guidance: args.guidance,
+              steps: args.steps,
+              seed: args.seed,
+            }
+          : undefined;
 
       // Build SDXL options
       const sdxlOptions: SDXLOptions | undefined =
@@ -1730,81 +1772,95 @@ async function main(): Promise<void> {
 
       const fluxModels: Model[] = ['flux', 'flux-pro', 'flux-dev', 'flux-schnell'];
 
+      // Determine skill for logging (default based on preset, or explicit --skill flag)
+      const logSkill: Skill = args.skill ?? (args.preset === 'artistic' ? 'art' : 'photorealistic');
+
       // Helper to log each variation
       const logVariation = (varOutput: string, seed?: number) => {
         const now = new Date();
         const sessionDate = now.toISOString().split('T')[0];
-        logGeneration({
-          timestamp: now.toISOString(),
-          session_date: sessionDate,
-          phase: args.phase,
-          prompt: finalPrompt,
-          model: args.model,
-          seed: seed ?? args.seed,
-          parameters: {
-            guidance: args.guidance,
-            steps: args.steps,
-            strength: args.strength,
+        logGeneration(
+          {
+            timestamp: now.toISOString(),
+            session_date: sessionDate,
+            skill: logSkill,
+            phase: args.phase,
+            prompt: finalPrompt,
+            model: args.model,
+            seed: seed ?? args.seed,
+            parameters: {
+              guidance: args.guidance,
+              steps: args.steps,
+              strength: args.strength,
+            },
+            input_image: args.image,
+            output_image: resolve(varOutput),
+            preset: args.preset,
+            size: args.size,
           },
-          input_image: args.image,
-          output_image: resolve(varOutput),
-          preset: args.preset,
-          size: args.size,
-        });
+          logSkill
+        );
       };
+
+      // Generate variations sequentially to avoid API rate limits
+      const RATE_LIMIT_DELAY_MS = 12000; // 12 seconds between requests (Replicate allows 6/min with low credits)
 
       for (let i = 1; i <= args.creativeVariations; i++) {
         const varOutput = `${basePath}-v${i}.png`;
         console.log(`Variation ${i}/${args.creativeVariations}: ${varOutput}`);
 
         if (fluxModels.includes(args.model)) {
-          promises.push(
-            generateWithFlux(finalPrompt, args.size as ReplicateSize, varOutput, args.model, fluxImg2ImgOptions)
-              .then((result) => { logVariation(varOutput, result.seed); })
+          const result = await generateWithFlux(
+            finalPrompt,
+            args.size as ReplicateSize,
+            varOutput,
+            args.model,
+            fluxImg2ImgOptions
           );
+          logVariation(varOutput, result.seed);
         } else if (args.model === 'nano-banana') {
-          promises.push(
-            generateWithNanoBanana(finalPrompt, args.size as ReplicateSize, varOutput)
-              .then(() => { logVariation(varOutput); })
-          );
+          await generateWithNanoBanana(finalPrompt, args.size as ReplicateSize, varOutput);
+          logVariation(varOutput);
         } else if (args.model === 'nano-banana-pro') {
-          promises.push(
-            generateWithNanoBananaPro(
-              finalPrompt,
-              args.size as GeminiSize,
-              args.aspectRatio!,
-              varOutput,
-              args.referenceImage
-            ).then(() => { logVariation(varOutput); })
+          await generateWithNanoBananaPro(
+            finalPrompt,
+            args.size as GeminiSize,
+            args.aspectRatio!,
+            varOutput,
+            args.referenceImage
           );
+          logVariation(varOutput);
         } else if (args.model === 'gpt-image-1') {
-          promises.push(
-            generateWithGPTImage(finalPrompt, args.size as OpenAISize, varOutput)
-              .then(() => { logVariation(varOutput); })
-          );
+          await generateWithGPTImage(finalPrompt, args.size as OpenAISize, varOutput);
+          logVariation(varOutput);
         } else if (args.model === 'sdxl') {
-          promises.push(
-            generateWithSDXL(finalPrompt, args.size as SDXLSize, varOutput, sdxlOptions)
-              .then(() => { logVariation(varOutput); })
-          );
+          await generateWithSDXL(finalPrompt, args.size as SDXLSize, varOutput, sdxlOptions);
+          logVariation(varOutput);
+        }
+
+        // Add delay between requests to respect rate limits (skip after last iteration)
+        if (i < args.creativeVariations) {
+          console.log(`⏳ Waiting ${RATE_LIMIT_DELAY_MS / 1000}s to respect API rate limits...`);
+          await new Promise((resolve) => setTimeout(resolve, RATE_LIMIT_DELAY_MS));
         }
       }
 
-      await Promise.all(promises);
       console.log(`\n✅ Generated ${args.creativeVariations} variations`);
 
       // Open images if requested
       if (args.open) {
-        const variationPaths = Array.from({ length: args.creativeVariations }, (_, i) =>
-          `${basePath}-v${i + 1}.png`
+        const variationPaths = Array.from(
+          { length: args.creativeVariations },
+          (_, i) => `${basePath}-v${i + 1}.png`
         );
         openImages(variationPaths);
       }
 
       // Generate thumbnails if requested
       if (args.thumbnail) {
-        const variationPaths = Array.from({ length: args.creativeVariations }, (_, i) =>
-          `${basePath}-v${i + 1}.png`
+        const variationPaths = Array.from(
+          { length: args.creativeVariations },
+          (_, i) => `${basePath}-v${i + 1}.png`
         );
         await Promise.all(variationPaths.map(generateThumbnail));
       }
@@ -1813,15 +1869,18 @@ async function main(): Promise<void> {
 
     // Build img2img options for flux (single image mode, includes seed and params)
     const fluxImg2ImgOptions: FluxImg2ImgOptions | undefined =
-      args.image || args.seed !== undefined || args.guidance !== undefined || args.steps !== undefined
-      ? {
-          image: args.image,
-          strength: args.strength,
-          guidance: args.guidance,
-          steps: args.steps,
-          seed: args.seed,
-        }
-      : undefined;
+      args.image ||
+      args.seed !== undefined ||
+      args.guidance !== undefined ||
+      args.steps !== undefined
+        ? {
+            image: args.image,
+            strength: args.strength,
+            guidance: args.guidance,
+            steps: args.steps,
+            seed: args.seed,
+          }
+        : undefined;
 
     // Build SDXL options (single image mode)
     const sdxlOptions: SDXLOptions | undefined =
@@ -1864,26 +1923,33 @@ async function main(): Promise<void> {
       await generateWithSDXL(finalPrompt, args.size as SDXLSize, args.output, sdxlOptions);
     }
 
-    // Auto-log generation for photorealistic workflow
+    // Determine skill for logging (default based on preset, or explicit --skill flag)
+    const logSkill: Skill = args.skill ?? (args.preset === 'artistic' ? 'art' : 'photorealistic');
+
+    // Auto-log generation for workflow tracking
     const now = new Date();
     const sessionDate = now.toISOString().split('T')[0];
-    logGeneration({
-      timestamp: now.toISOString(),
-      session_date: sessionDate,
-      phase: args.phase,
-      prompt: finalPrompt,
-      model: args.model,
-      seed: generationResult?.seed ?? args.seed,
-      parameters: {
-        guidance: args.guidance,
-        steps: args.steps,
-        strength: args.strength,
+    logGeneration(
+      {
+        timestamp: now.toISOString(),
+        session_date: sessionDate,
+        skill: logSkill,
+        phase: args.phase,
+        prompt: finalPrompt,
+        model: args.model,
+        seed: generationResult?.seed ?? args.seed,
+        parameters: {
+          guidance: args.guidance,
+          steps: args.steps,
+          strength: args.strength,
+        },
+        input_image: args.image,
+        output_image: resolve(args.output),
+        preset: args.preset,
+        size: args.size,
       },
-      input_image: args.image,
-      output_image: resolve(args.output),
-      preset: args.preset,
-      size: args.size,
-    });
+      logSkill
+    );
 
     // Remove background if requested
     if (args.removeBg) {
