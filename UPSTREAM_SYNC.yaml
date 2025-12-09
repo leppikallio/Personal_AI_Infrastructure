@@ -9,7 +9,7 @@ last_sync:
   date: "2025-12-09"
   upstream_commit: b70e808d17729fe3a3775f9045c04a07cc13b345
   upstream_tag: v0.9.1  # Full sync with native Fabric patterns
-  our_main_commit: TBD  # Update after merge
+  our_main_commit: eb9d747f4d4ecc14c7e0afe5ee9642cda0be0093
   notes: |
     Major sync: 15 of 16 upstream commits adopted (only Windows PowerShell skipped).
     - 9 docs/images commits (diagrams, QUICKSTART, README formatting)
