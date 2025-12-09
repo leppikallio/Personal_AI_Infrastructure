@@ -321,6 +321,26 @@ Kai and I work hard to address issues and PRs throughout the week — we try not
 
 ## 📝 Updates
 
+<details open>
+<summary><strong>v0.9.1 (2025-12-04) — Setup Script Fix</strong></summary>
+
+<br/>
+
+**PAI_DIR Auto-Configuration**
+- `setup.sh` now automatically configures `PAI_DIR` in `settings.json` with your actual home directory path
+- No more manual editing of `/Users/YOURNAME/.claude` placeholder
+- Clear error messaging if hooks fail due to misconfigured paths
+
+**Improved Documentation**
+- Added `_setupNote` in `settings.json` explaining the fix
+- Updated `_envDocs` with troubleshooting guidance
+- QUICKSTART.md troubleshooting section for PAI_DIR issues
+
+**Bug Fix**
+- Fixes #110 — Hook failures caused by unexpanded PAI_DIR placeholder
+
+</details>
+
 <details>
 <summary><strong>v0.9.0 (2025-12-01) — Platform Agnostic Release</strong></summary>
 
