@@ -31,7 +31,7 @@
 
 ---
 
-**The best AI in the world should be available to everyone, not just companies with massive engineering teams.**
+# The best AI in the world should be available to everyone
 
 </div>
 
