@@ -21,7 +21,7 @@
 
 <br/>
 
-[**Quick Start**](#-quick-start) · [**Documentation**](#-documentation) · [**Examples**](#-examples) · [**Updates**](#-updates) · [**Community**](#-community)
+[**Quick Start**](#-quick-start) · [**Documentation**](#-documentation) · [**Examples**](#-examples) · [**Updating**](#-updating-pai) · [**Community**](#-community)
 
 <br/>
 
@@ -303,6 +303,25 @@ Specialized agents with distinct personalities for different tasks. Personality 
 | **Format** | Markdown | NOT HTML for basic content |
 | **Testing** | Vitest | When needed |
 | **Voice** | ElevenLabs | TTS integration |
+
+<br/>
+
+## 🔄 Updating PAI
+
+PAI includes an intelligent sideloading system that helps you update while preserving your customizations.
+
+```bash
+# In Claude Code, run:
+/paiupdate    # or just /pa
+```
+
+**What happens:**
+1. Your DA fetches the latest PAI to a staging area (doesn't touch your files)
+2. Analyzes differences between upstream and your customizations
+3. Generates a personalized report showing conflicts vs. safe updates
+4. You choose what to adopt — your DA handles the merge
+
+Your custom skills, modified hooks, and personalized settings are **never blindly overwritten**. The system understands that your `env.DA`, custom environment variables, and personal tweaks are intentional.
 
 <br/>
 

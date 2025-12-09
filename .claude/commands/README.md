@@ -24,7 +24,11 @@ $ARGUMENTS
 
 Then use it: `/summarize [paste your content here]`
 
-## Included Examples
+## Built-in Commands
+
+- `/paiupdate` (or `/pa`) - **PAI Update System**: Safely update your PAI installation while preserving your customizations. Your DA analyzes upstream changes and recommends what to adopt.
+
+## Example Commands
 
 - `example.md` - A simple example showing the pattern
 
