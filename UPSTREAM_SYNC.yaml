@@ -6,13 +6,23 @@ upstream:
   remote_name: upstream
 
 last_sync:
+  date: "2025-12-09"
+  upstream_commit: b70e808d17729fe3a3775f9045c04a07cc13b345
+  upstream_tag: v0.9.1  # Full sync with native Fabric patterns
+  our_main_commit: TBD  # Update after merge
+  notes: |
+    Major sync: 15 of 16 upstream commits adopted (only Windows PowerShell skipped).
+    - 9 docs/images commits (diagrams, QUICKSTART, README formatting)
+    - /paiupdate command for intelligent future syncing
+    - Native Fabric patterns (248 patterns, 24K+ lines) - replaces CLI spawning
+    - setup.sh improvements and settings.json documentation
+    - TitleCase alignment (manual rename of 5 directories)
+    Removed broken fabric-repo submodule (185MB freed).
+
+previous_sync:
   date: "2025-12-06"
   upstream_commit: dabaea9b7ec12f8e080bbe52c4b8c1f85ec0fc23
-  upstream_tag: v0.9.1-pre  # Commits for v0.9.1 exist but tag not yet created
-  our_main_commit: 96058bd3d646d666fc6c6a5619e8d11591682e6e
-  notes: |
-    Synced images and doc improvements.
-    Kept our custom settings.json and setup.sh.
+  notes: Synced images and doc improvements.
 
 # Files we deliberately keep different from upstream
 # DO NOT overwrite these during sync
@@ -35,6 +45,18 @@ our_additions:
   - package.json
   - tsconfig.json
   - UPSTREAM_SYNC.yaml
+  - 35+ custom skills (adaptive research, UOCS logging, etc.)
+
+# Commits deliberately skipped from upstream
+skipped_commits:
+  - commit: b25c358
+    description: "Windows PowerShell support (bootstrap.ps1)"
+    reason: "Not using Windows - macOS only"
+
+# TitleCase commits (ca9d331, 6f3dc2e) - manually aligned instead of cherry-picked
+# Cherry-pick failed due to hybrid state (some dirs already TitleCase, some lowercase)
+# Manual rename completed: brightdata→BrightData, ffuf→Ffuf, observability→Observability,
+#   prompting→Prompting, research→Research
 
 # What to cherry-pick from upstream (docs/images mostly)
 sync_targets:
