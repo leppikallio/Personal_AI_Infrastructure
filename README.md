@@ -363,7 +363,7 @@ Kai and I work hard to address issues and PRs throughout the week — we try not
 
 **PAI_DIR Auto-Configuration**
 - `setup.sh` now automatically configures `PAI_DIR` in `settings.json` with your actual home directory path
-- No more manual editing of `/Users/YOURNAME/.claude` placeholder
+- No more manual editing of `__HOME__/.claude` placeholder
 - Clear error messaging if hooks fail due to misconfigured paths
 
 **Improved Documentation**

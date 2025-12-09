@@ -283,9 +283,9 @@ If Bun isn't found, reinstall it and restart your terminal.
 </details>
 
 <details>
-<summary><strong>Hook Errors Mentioning "YOURNAME"</strong></summary>
+<summary><strong>Hook Errors Mentioning "__HOME__"</strong></summary>
 
-If you see errors like `No such file or directory: /Users/YOURNAME/.claude/...`, the `PAI_DIR` variable wasn't configured correctly.
+If you see errors like `No such file or directory: __HOME__/.claude/...`, the `PAI_DIR` variable wasn't configured correctly.
 
 **Fix: Re-run the setup script**
 ```bash
@@ -300,10 +300,11 @@ This automatically configures `PAI_DIR` with your actual home directory path.
 nano ~/.claude/settings.json
 
 # Find this line:
-"PAI_DIR": "/Users/YOURNAME/.claude"
+"PAI_DIR": "__HOME__/.claude"
 
-# Replace with your actual path:
-"PAI_DIR": "/Users/youractualusername/.claude"
+# Replace with your actual path (examples):
+# macOS: "PAI_DIR": "/Users/yourusername/.claude"
+# Linux: "PAI_DIR": "/home/yourusername/.claude"
 ```
 
 </details>

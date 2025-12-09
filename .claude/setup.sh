@@ -581,14 +581,17 @@ if ask_yes_no "Are you using Claude Code?"; then
     if [ -f "$PAI_DIR/.claude/settings.json" ]; then
         cp "$PAI_DIR/.claude/settings.json" "$HOME/.claude/settings.json"
 
-        # Update PAI_DIR to the actual home directory path
+        # Get home directory robustly (fallback if $HOME is unset)
+        USER_HOME="${HOME:-$(eval echo ~)}"
+
+        # Update PAI_DIR to the actual home directory path (platform-agnostic)
         if [[ "$OSTYPE" == "darwin"* ]]; then
-            sed -i '' "s|/Users/YOURNAME/.claude|$HOME/.claude|g" "$HOME/.claude/settings.json"
+            sed -i '' "s|__HOME__|${USER_HOME}|g" "$HOME/.claude/settings.json"
         else
-            sed -i "s|/Users/YOURNAME/.claude|$HOME/.claude|g" "$HOME/.claude/settings.json"
+            sed -i "s|__HOME__|${USER_HOME}|g" "$HOME/.claude/settings.json"
         fi
 
-        print_success "Updated settings.json with your path: $HOME/.claude"
+        print_success "Updated settings.json with your path: ${USER_HOME}/.claude"
     fi
 
     echo ""
