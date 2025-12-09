@@ -173,11 +173,27 @@ Explore example skills in `.claude/skills/`:
 |-------|-------------|
 | **observability/** | Real-time agent monitoring dashboard with WebSocket streaming |
 | **brightdata/** | Four-tier progressive web scraping with automatic fallback |
-| **fabric/** | Integration with Fabric pattern system (242+ AI patterns) |
+| **fabric/** | **Native Fabric patterns** — 248 patterns run directly in Claude's context (no CLI needed) |
 | **research/** | Multi-source research workflows |
 | **create-skill/** | Templates for creating new skills |
 
 Each skill demonstrates the skills-as-containers pattern with routing, workflows, and self-contained documentation.
+
+### Native Fabric Patterns
+
+The Fabric skill now executes patterns **natively** within Claude Code — no CLI spawning required:
+
+- **Your subscription's power** — Patterns run with your Opus/Sonnet model, not Fabric's configured model
+- **Full context** — Patterns have access to your entire conversation history
+- **Faster execution** — No process spawning overhead
+- **248 patterns included** — extract_wisdom, summarize, threat modeling, and more
+
+```bash
+# Update patterns from upstream
+.claude/skills/fabric/tools/update-patterns.sh
+```
+
+Only use `fabric` CLI for YouTube transcripts (`-y`) or pattern updates (`-U`).
 
 <br/>
 
