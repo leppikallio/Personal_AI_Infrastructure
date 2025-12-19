@@ -85,8 +85,11 @@ history.jsonl
 .claude/.update.lock
 .claude/ide/
 .claude/context/*
+.claude/telemetry/
 
 # PAI Update System (sideloading)
 .claude/pai_updates/
 .claude/pai_backups/
 .claude/.pai-sync-history
+.claude/stats-cache.json
+history/*

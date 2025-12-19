@@ -13,13 +13,15 @@
  */
 
 import { spawn } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { extname, join, resolve } from 'node:path';
+import { dirname, extname, join, resolve } from 'node:path';
 import { ApiError, GoogleGenAI } from '@google/genai';
 import OpenAI from 'openai';
 import Replicate from 'replicate';
+import sharp from 'sharp';
+import { parse as parseYAML } from 'yaml';
 
 // ============================================================================
 // PAI Directory Configuration
@@ -68,6 +70,41 @@ async function loadEnv(): Promise<void> {
 }
 
 // ============================================================================
+// Project Root Detection
+// ============================================================================
+
+/**
+ * Find the project root by walking up from a starting path
+ * Looks for package.json or .git directory as markers
+ * @param startPath - Starting path (typically MDX file path)
+ * @returns Project root path, or startPath's directory if not found
+ */
+function findProjectRoot(startPath: string): string {
+  let current = resolve(startPath);
+
+  // If startPath is a file, start from its directory
+  if (existsSync(current) && !statSync(current).isDirectory()) {
+    current = dirname(current);
+  }
+
+  // Walk up looking for project markers
+  while (current !== dirname(current)) {
+    // Check for package.json (npm/bun project)
+    if (existsSync(join(current, 'package.json'))) {
+      return current;
+    }
+    // Check for .git directory (git repo root)
+    if (existsSync(join(current, '.git'))) {
+      return current;
+    }
+    current = dirname(current);
+  }
+
+  // Fallback to starting directory if no markers found
+  return dirname(resolve(startPath));
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -112,12 +149,14 @@ interface CLIArgs {
   model: Model;
   prompt: string;
   promptFile?: string; // Read prompt from file (--prompt-file)
+  promptFileMdx?: string; // Read illustrations from MDX frontmatter (--prompt-file-mdx)
+  illustrationName?: string; // Generate only specific illustration (--illustration-name)
   size: Size;
   output: string;
   creativeVariations?: number;
   aspectRatio?: ReplicateSize; // For Gemini models
   transparent?: boolean; // Enable transparent background
-  referenceImage?: string; // Reference image path (Nano Banana Pro only)
+  referenceImages?: string[]; // Reference image paths (Nano Banana Pro only, up to 14)
   removeBg?: boolean; // Remove background after generation using remove.bg API
   // img2img parameters (SDXL and Flux-dev)
   image?: string; // Input image for img2img mode
@@ -366,6 +405,10 @@ REQUIRED:
   --prompt <text>      Image generation prompt (quote if contains spaces)
   --prompt-file <path> Read prompt from file (alternative to --prompt)
                        Supports .txt, .md with optional YAML frontmatter for parameters
+  --prompt-file-mdx <path>  Read illustrations array from MDX frontmatter
+                            Generates all illustrations defined in the file
+  --illustration-name <n>   Generate only specific illustration from MDX (optional)
+                            Use with --prompt-file-mdx to filter by name
 
 OPTIONS:
   --size <size>              Image size/aspect ratio (default: 16:9)
@@ -377,6 +420,7 @@ OPTIONS:
                              Options: 1:1, 2:3, 3:2, 3:4, 4:3, 4:5, 5:4, 9:16, 16:9, 21:9
   --output <path>            Output file path (default: /tmp/ul-image.png)
   --reference-image <path>   Reference image for style/composition guidance (Nano Banana Pro only)
+                             Can be specified multiple times (up to 14 images)
   --transparent              Enable transparent background instructions
   --remove-bg                Remove background after generation using remove.bg API
   --creative-variations <n>  Generate N variations (appends -v1, -v2, etc.)
@@ -454,6 +498,12 @@ EXAMPLES:
   # Nano Banana Pro with reference image
   generate-ulart-image --model nano-banana-pro --prompt "..." \\
     --reference-image /tmp/style.png --size 2K --aspect-ratio 16:9
+
+  # Generate all illustrations from MDX frontmatter
+  generate-ulart-image --prompt-file-mdx src/content/blog/my-post.mdx
+
+  # Generate specific illustration from MDX
+  generate-ulart-image --prompt-file-mdx my-post.mdx --illustration-name cover
 
 ENVIRONMENT VARIABLES:
   REPLICATE_API_TOKEN  Required for flux, sdxl, and nano-banana models
@@ -551,6 +601,14 @@ function parseArgs(argv: string[]): CLIArgs {
         parsed.promptFile = value;
         i++; // Skip next arg (value)
         break;
+      case 'prompt-file-mdx':
+        parsed.promptFileMdx = value;
+        i++; // Skip next arg (value)
+        break;
+      case 'illustration-name':
+        parsed.illustrationName = value;
+        i++; // Skip next arg (value)
+        break;
       case 'size':
         parsed.size = value as Size;
         i++; // Skip next arg (value)
@@ -564,7 +622,13 @@ function parseArgs(argv: string[]): CLIArgs {
         i++; // Skip next arg (value)
         break;
       case 'reference-image':
-        parsed.referenceImage = value;
+        if (!parsed.referenceImages) {
+          parsed.referenceImages = [];
+        }
+        if (!existsSync(value)) {
+          throw new CLIError(`Reference image not found: ${value}`);
+        }
+        parsed.referenceImages.push(value);
         i++; // Skip next arg (value)
         break;
       case 'creative-variations': {
@@ -690,8 +754,15 @@ function parseArgs(argv: string[]): CLIArgs {
     }
   }
 
-  if (!parsed.prompt && !parsed.promptFile) {
-    throw new CLIError('Missing required argument: --prompt or --prompt-file');
+  // Handle --prompt-file-mdx: validate file exists (will be read async in main)
+  if (parsed.promptFileMdx) {
+    if (!existsSync(parsed.promptFileMdx)) {
+      throw new CLIError(`MDX file not found: ${parsed.promptFileMdx}`);
+    }
+  }
+
+  if (!parsed.prompt && !parsed.promptFile && !parsed.promptFileMdx) {
+    throw new CLIError('Missing required argument: --prompt, --prompt-file, or --prompt-file-mdx');
   }
 
   // Validate reference-image is only used with nano-banana-pro
@@ -814,6 +885,13 @@ function parseArgs(argv: string[]): CLIArgs {
     }
   }
 
+  // Validate reference images count (Nano Banana Pro supports up to 14)
+  if (parsed.referenceImages && parsed.referenceImages.length > 14) {
+    throw new CLIError(
+      `Too many reference images: ${parsed.referenceImages.length}. Nano Banana Pro supports up to 14 reference images.`
+    );
+  }
+
   return parsed as CLIArgs;
 }
 
@@ -831,6 +909,24 @@ interface FrontmatterData {
   scheduler?: SDXLScheduler;
   size?: Size;
   aspect_ratio?: ReplicateSize;
+  reference_images?: string | string[];
+}
+
+// MDX frontmatter illustration config (matches Astro content schema)
+interface IllustrationConfig {
+  name: string;
+  slug: string;
+  prompt: string;
+  model?: 'nano-banana-pro' | 'nano-banana' | 'flux-pro' | 'flux-dev' | 'sdxl';
+  size?: '1K' | '2K' | '4K';
+  aspect_ratio?: '1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '4:5' | '5:4' | '9:16' | '16:9' | '21:9';
+  format?: 'png' | 'webp' | 'jpeg';
+  reference_images?: string[]; // Ordered array of reference image paths
+  output: string;
+}
+
+interface MdxFrontmatter {
+  illustrations?: IllustrationConfig[];
 }
 
 interface ParsedPromptFile {
@@ -843,96 +939,11 @@ interface ParsedPromptFile {
  * Supports basic key: value pairs and multiline strings with |
  */
 function parseYamlFrontmatter(content: string): FrontmatterData {
-  const data: FrontmatterData = {};
-  const lines = content.split('\n');
-  let currentKey: string | null = null;
-  let multilineValue: string[] = [];
-  let isMultiline = false;
+  // Use proper YAML parser instead of custom implementation
+  const parsed = parseYAML(content) as Record<string, unknown>;
 
-  for (const line of lines) {
-    // Handle multiline continuation
-    if (isMultiline) {
-      if (line.startsWith('  ') || line.startsWith('\t')) {
-        multilineValue.push(line.trim());
-        continue;
-      }
-      // End of multiline, save it
-      if (currentKey) {
-        (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
-      }
-      isMultiline = false;
-      currentKey = null;
-      multilineValue = [];
-    }
-
-    // Skip empty lines and comments
-    if (!line.trim() || line.trim().startsWith('#')) continue;
-
-    // Parse key: value
-    const colonIndex = line.indexOf(':');
-    if (colonIndex === -1) continue;
-
-    const key = line.slice(0, colonIndex).trim();
-    let value = line.slice(colonIndex + 1).trim();
-
-    // Check for multiline indicator
-    if (value === '|') {
-      isMultiline = true;
-      currentKey = key;
-      multilineValue = [];
-      continue;
-    }
-
-    // Remove quotes if present
-    if (
-      (value.startsWith('"') && value.endsWith('"')) ||
-      (value.startsWith("'") && value.endsWith("'"))
-    ) {
-      value = value.slice(1, -1);
-    }
-
-    // Convert to appropriate type based on key
-    switch (key) {
-      case 'model':
-        if (['flux', 'sdxl', 'nano-banana', 'nano-banana-pro', 'gpt-image-1'].includes(value)) {
-          data.model = value as Model;
-        }
-        break;
-      case 'image':
-        data.image = value;
-        break;
-      case 'strength':
-        data.strength = Number.parseFloat(value);
-        break;
-      case 'guidance':
-        data.guidance = Number.parseFloat(value);
-        break;
-      case 'steps':
-        data.steps = Number.parseInt(value, 10);
-        break;
-      case 'negative_prompt':
-        data.negative_prompt = value;
-        break;
-      case 'scheduler':
-        if (SDXL_SCHEDULERS.includes(value as SDXLScheduler)) {
-          data.scheduler = value as SDXLScheduler;
-        }
-        break;
-      case 'size':
-        data.size = value as Size;
-        break;
-      case 'aspect_ratio':
-        data.aspect_ratio = value as ReplicateSize;
-        break;
-    }
-  }
-
-  // Handle trailing multiline
-  if (isMultiline && currentKey) {
-    (data as Record<string, unknown>)[currentKey] = multilineValue.join('\n');
-  }
-
-  return data;
+  // Return as FrontmatterData (the YAML library handles all parsing correctly)
+  return parsed as FrontmatterData;
 }
 
 /**
@@ -1422,12 +1433,40 @@ async function generateWithSDXL(
   console.log(`✅ Image saved to ${output}`);
 }
 
+/**
+ * Convert image to target format using Sharp
+ * @param inputPath - Source image path
+ * @param outputPath - Destination path (extension determines format)
+ * @param format - Target format: 'png' | 'webp' | 'jpeg'
+ * @param quality - Quality for lossy formats (default: 85 for webp/jpeg)
+ */
+async function convertImageFormat(
+  inputPath: string,
+  outputPath: string,
+  format: 'png' | 'webp' | 'jpeg',
+  quality: number = 85
+): Promise<void> {
+  const image = sharp(inputPath);
+
+  switch (format) {
+    case 'png':
+      await image.png().toFile(outputPath);
+      break;
+    case 'webp':
+      await image.webp({ quality }).toFile(outputPath);
+      break;
+    case 'jpeg':
+      await image.jpeg({ quality }).toFile(outputPath);
+      break;
+  }
+}
+
 async function generateWithNanoBananaPro(
   prompt: string,
   size: GeminiSize,
   aspectRatio: ReplicateSize,
   output: string,
-  referenceImage?: string
+  referenceImages?: string[]
 ): Promise<void> {
   const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -1436,51 +1475,55 @@ async function generateWithNanoBananaPro(
 
   const ai = new GoogleGenAI({ apiKey });
 
-  if (referenceImage) {
+  if (referenceImages && referenceImages.length > 0) {
     console.log(
-      `🍌✨ Generating with Nano Banana Pro (Gemini 3 Pro) at ${size} ${aspectRatio} with reference image...`
+      `🍌✨ Generating with Nano Banana Pro (Gemini 3 Pro) at ${size} ${aspectRatio} with ${referenceImages.length} reference image(s)...`
     );
   } else {
     console.log(`🍌✨ Generating with Nano Banana Pro (Gemini 3 Pro) at ${size} ${aspectRatio}...`);
   }
 
-  // Prepare content parts
-  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+  // Prepare content parts - use flat array format per SDK docs
+  // Official example shows: [{ text: "prompt" }, { inlineData }, { inlineData }]
+  // TEXT FIRST, then images
+  const contentParts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [];
 
-  // Add reference image if provided
-  if (referenceImage) {
-    // Read image file
-    const imageBuffer = await readFile(referenceImage);
-    const imageBase64 = imageBuffer.toString('base64');
+  // Add text prompt FIRST (per official docs order)
+  contentParts.push({ text: prompt });
 
-    // Determine MIME type from extension
-    const ext = extname(referenceImage).toLowerCase();
-    let mimeType: string;
-    switch (ext) {
-      case '.png':
-        mimeType = 'image/png';
-        break;
-      case '.jpg':
-      case '.jpeg':
-        mimeType = 'image/jpeg';
-        break;
-      case '.webp':
-        mimeType = 'image/webp';
-        break;
-      default:
-        throw new CLIError(`Unsupported image format: ${ext}. Supported: .png, .jpg, .jpeg, .webp`);
+  // Add reference images after text
+  if (referenceImages && referenceImages.length > 0) {
+    for (const referenceImage of referenceImages) {
+      // Read image file
+      const imageBuffer = await readFile(referenceImage);
+      const imageBase64 = imageBuffer.toString('base64');
+
+      // Determine MIME type from extension
+      const ext = extname(referenceImage).toLowerCase();
+      let mimeType: string;
+      switch (ext) {
+        case '.png':
+          mimeType = 'image/png';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case '.webp':
+          mimeType = 'image/webp';
+          break;
+        default:
+          throw new CLIError(`Unsupported image format: ${ext}. Supported: .png, .jpg, .jpeg, .webp`);
+      }
+
+      contentParts.push({
+        inlineData: {
+          mimeType,
+          data: imageBase64,
+        },
+      });
     }
-
-    parts.push({
-      inlineData: {
-        mimeType,
-        data: imageBase64,
-      },
-    });
   }
-
-  // Add text prompt
-  parts.push({ text: prompt });
 
   // Retry loop with exponential backoff
   let lastError: Error | undefined;
@@ -1489,17 +1532,19 @@ async function generateWithNanoBananaPro(
     try {
       // Prefix prompt with explicit image generation intent to prevent
       // the model from interpreting narrative prompts as text generation tasks
+      // SKIP prefix when reference images are present - simple prompts work better
       const imagePromptPrefix = 'Generate an image depicting the following scene:\n\n';
-      const prefixedParts = parts.map((part) => {
-        if (part.text && !part.text.startsWith('Generate an image')) {
-          return { ...part, text: imagePromptPrefix + part.text };
+      const finalContents = contentParts.map((part) => {
+        // Only prefix text parts, and only when no reference images
+        if ('text' in part && !part.text.startsWith('Generate an image') && (!referenceImages || referenceImages.length === 0)) {
+          return { text: imagePromptPrefix + part.text };
         }
         return part;
       });
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-image-preview',
-        contents: [{ parts: prefixedParts }],
+        contents: finalContents,  // Flat array: [{ text }, { inlineData }, { inlineData }]
         config: {
           // Use both TEXT and IMAGE to allow model to communicate issues,
           // but prefix prompt with explicit image generation intent
@@ -1638,6 +1683,118 @@ async function main(): Promise<void> {
 
     const args = parseArgs(process.argv);
 
+    // Handle --prompt-file-mdx: Generate illustrations from MDX frontmatter
+    if (args.promptFileMdx) {
+      console.log(`📄 Reading illustrations from MDX: ${args.promptFileMdx}`);
+      const mdxContent = await readFile(args.promptFileMdx, 'utf-8');
+      const { frontmatter } = parsePromptFile(mdxContent);
+      const mdxData = frontmatter as unknown as MdxFrontmatter;
+
+      if (!mdxData.illustrations || mdxData.illustrations.length === 0) {
+        throw new CLIError('No illustrations found in MDX frontmatter');
+      }
+
+      let illustrations = mdxData.illustrations;
+
+      // Filter by --illustration-name if specified
+      if (args.illustrationName) {
+        illustrations = illustrations.filter((i) => i.name === args.illustrationName);
+        if (illustrations.length === 0) {
+          throw new CLIError(
+            `No illustration named "${args.illustrationName}" found. Available: ${mdxData.illustrations.map((i) => i.name).join(', ')}`
+          );
+        }
+      }
+
+      console.log(`🎨 Found ${illustrations.length} illustration(s) to generate\n`);
+
+      // Generate each illustration
+      for (const illust of illustrations) {
+        const model = illust.model || 'nano-banana-pro';
+        const size = illust.size || '2K';
+        const aspectRatio = illust.aspect_ratio || '16:9';
+        const format = illust.format || 'webp';
+
+        // Find project root for resolving all relative paths
+        const projectRoot = findProjectRoot(args.promptFileMdx!);
+
+        // Resolve output path relative to project root
+        const resolvedOutput = resolve(projectRoot, illust.output);
+
+        // Resolve reference image paths relative to project root
+        // Paths like "characters/petteri/..." are relative to project root, not MDX file
+        let resolvedRefImages: string[] | undefined;
+        if (illust.reference_images && illust.reference_images.length > 0) {
+          resolvedRefImages = illust.reference_images.map((imgPath: string) => {
+            const resolvedPath = resolve(projectRoot, imgPath);
+            if (!existsSync(resolvedPath)) {
+              throw new CLIError(`Reference image not found: ${resolvedPath}\n  (Project root: ${projectRoot})`);
+            }
+            return resolvedPath;
+          });
+        }
+
+        console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.log(`📌 Generating: ${illust.name}`);
+        console.log(`   Prompt: ${illust.prompt.slice(0, 80)}${illust.prompt.length > 80 ? '...' : ''}`);
+        console.log(`   Model: ${model}`);
+        console.log(`   Size: ${size}, Aspect: ${aspectRatio}, Format: ${format}`);
+        if (resolvedRefImages && resolvedRefImages.length > 0) {
+          console.log(`   Reference images: ${resolvedRefImages.length}`);
+          for (const img of resolvedRefImages) {
+            console.log(`      - ${img}`);
+          }
+        }
+        console.log(`   Output: ${resolvedOutput}`);
+        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
+        // Ensure output directory exists
+        const outputDir = dirname(resolvedOutput);
+        if (!existsSync(outputDir)) {
+          mkdirSync(outputDir, { recursive: true });
+        }
+
+        // Determine if we need format conversion
+        // Generate as PNG for best quality, then convert to target format
+        const needsConversion = format !== 'png';
+        const tempOutput = needsConversion
+          ? resolvedOutput.replace(/\.[^.]+$/, '.tmp.png')
+          : resolvedOutput;
+
+        // Generate based on model (always to PNG for conversion, or direct if PNG)
+        if (model === 'nano-banana-pro') {
+          await generateWithNanoBananaPro(
+            illust.prompt,
+            size as GeminiSize,
+            aspectRatio as ReplicateSize,
+            tempOutput,
+            resolvedRefImages
+          );
+        } else if (model === 'nano-banana') {
+          await generateWithNanoBanana(illust.prompt, aspectRatio as ReplicateSize, tempOutput);
+        } else if (model === 'flux-pro' || model === 'flux-dev') {
+          await generateWithFlux(illust.prompt, aspectRatio as ReplicateSize, tempOutput, model);
+        } else if (model === 'sdxl') {
+          // Map aspect ratio to SDXL size
+          const sdxlSize = aspectRatio === '16:9' ? '1536x1024' : aspectRatio === '9:16' ? '1024x1536' : '1024x1024';
+          await generateWithSDXL(illust.prompt, sdxlSize as SDXLSize, tempOutput);
+        }
+
+        // Convert to target format if needed
+        if (needsConversion) {
+          console.log(`🔄 Converting to ${format.toUpperCase()}...`);
+          await convertImageFormat(tempOutput, resolvedOutput, format);
+          // Clean up temp file
+          const { unlink } = await import('node:fs/promises');
+          await unlink(tempOutput);
+          console.log(`✅ Converted and saved to ${resolvedOutput}`);
+        }
+      }
+
+      console.log(`\n✅ Generated ${illustrations.length} illustration(s)`);
+      return; // Exit after MDX processing
+    }
+
     // Read prompt from file if --prompt-file was provided
     if (args.promptFile) {
       console.log(`📄 Reading prompt from ${args.promptFile}...`);
@@ -1704,6 +1861,28 @@ async function main(): Promise<void> {
       if (frontmatter.scheduler && !args.scheduler) {
         args.scheduler = frontmatter.scheduler;
         console.log(`   scheduler: ${args.scheduler}`);
+      }
+
+      // Reference images from frontmatter (CLI takes precedence)
+      if (frontmatter.reference_images && (!args.referenceImages || args.referenceImages.length === 0)) {
+        const referenceImages = Array.isArray(frontmatter.reference_images)
+          ? frontmatter.reference_images
+          : [frontmatter.reference_images];
+
+        // Resolve paths relative to prompt file directory if they're relative
+        const promptFileDir = dirname(resolve(args.promptFile));
+        args.referenceImages = referenceImages.map((imgPath: string) => {
+          const resolvedPath = resolve(promptFileDir, imgPath);
+          if (!existsSync(resolvedPath)) {
+            throw new CLIError(`Reference image from frontmatter not found: ${resolvedPath}`);
+          }
+          return resolvedPath;
+        });
+
+        console.log(`   reference_images: ${args.referenceImages.length} image(s)`);
+        for (const img of args.referenceImages) {
+          console.log(`      - ${img}`);
+        }
       }
 
       // Validate merged args for consistency
@@ -1827,7 +2006,7 @@ async function main(): Promise<void> {
             args.size as GeminiSize,
             args.aspectRatio!,
             varOutput,
-            args.referenceImage
+            args.referenceImages
           );
           logVariation(varOutput);
         } else if (args.model === 'gpt-image-1') {
@@ -1915,7 +2094,7 @@ async function main(): Promise<void> {
         args.size as GeminiSize,
         args.aspectRatio!,
         args.output,
-        args.referenceImage
+        args.referenceImages
       );
     } else if (args.model === 'gpt-image-1') {
       await generateWithGPTImage(finalPrompt, args.size as OpenAISize, args.output);

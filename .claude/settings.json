@@ -1,13 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
-  "_envDocs": {
-    "description": "Platform-agnostic environment variables used throughout the Personal AI system",
-    "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Nova'). Used in statusline, hooks, and agent identification.",
-    "PAI_DIR": "Root directory for all PAI configuration. The setup.sh script updates this automatically. If hooks fail with 'No such file or directory', update this to your actual path (e.g., /Users/john/.claude).",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "Maximum tokens for Claude responses. Higher values allow longer outputs but cost more."
-  },
-  "_setupNote": "IMPORTANT: Run 'bash .claude/setup.sh' to automatically configure PAI_DIR. If you see hook errors mentioning '__HOME__', the setup script was not run or you need to manually change PAI_DIR below to your actual home directory path (e.g., /Users/john/.claude on macOS or /home/john/.claude on Linux).",
   "env": {
+    "PAI_DIR": "/Users/zuul/Projects/PAI/.claude",
     "DA": "Marvin",
     "ENGINEER_NAME": "Petteri",
     "ENGINEER_EMAIL": "<ask if you need this>",
@@ -73,7 +67,6 @@
       "Bash(> /dev/sda)"
     ]
   },
-  "model": "opus",
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [],
   "hooks": {
@@ -198,10 +191,24 @@
     "command": "bash ${PAI_DIR}/statusline-command.sh"
   },
   "enabledPlugins": {
-    "browser-automation@browser-tools": true,
-    "document-skills@anthropic-agent-skills": true
+    "browser-automation@browser-tools": true
   },
   "alwaysThinkingEnabled": true,
+  "_envDocs": {
+    "description": "Platform-agnostic environment variables used throughout the Personal AI system",
+    "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Marvin'). Used in statusline, hooks, and agent identification.",
+    "ENGINEER_NAME": "Your name for personalized responses",
+    "ENGINEER_EMAIL": "Your email for AI communications",
+    "PAI_DIR": "Root directory for all PAI configuration - SET IN SHELL (~/.bashrc or ~/.zshrc), NOT HERE. Defaults to ~/.claude if not set.",
+    "TIME_ZONE": "Your timezone (e.g., America/Los_Angeles, Europe/Helsinki)",
+    "DA_VOICE_ID": "ElevenLabs voice ID for your main assistant",
+    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "Maximum tokens for Claude responses. Higher values allow longer outputs but cost more.",
+    "CLAUDE_SEARCH_MODEL": "Claude model for research (e.g., claude-sonnet-4-5)",
+    "GEMINI_MODEL": "Gemini model for research (e.g., gemini-2.5-pro)",
+    "GROK_MODEL": "Grok model for research (e.g., grok-4-1-fast-reasoning)",
+    "PERPLEXITY_MODEL": "Perplexity model for research (e.g., sonar-reasoning-pro)"
+  },
+  "_setupNote": "IMPORTANT: Run 'bash .claude/setup.sh' to automatically configure PAI_DIR. If you see hook errors mentioning '__HOME__', the setup script was not run or you need to manually change PAI_DIR below to your actual home directory path (e.g., /Users/john/.claude on macOS or /home/john/.claude on Linux).",
   "photorealistic": {
     "_comment": "Configuration for the Photorealistic skill image generation",
     "outputDir": "~/.claude/history/photorealistic",
@@ -303,21 +310,14 @@
       }
     }
   },
-  "_envDocs": {
-    "description": "Platform-agnostic environment variables used throughout the Personal AI system",
-    "DA": "Digital Assistant name - your AI's identity (e.g., 'Kai', 'PAI', 'Marvin'). Used in statusline, hooks, and agent identification.",
-    "ENGINEER_NAME": "Your name for personalized responses",
-    "ENGINEER_EMAIL": "Your email for AI communications",
-    "PAI_DIR": "Root directory for all PAI configuration - SET IN SHELL (~/.bashrc or ~/.zshrc), NOT HERE. Defaults to ~/.claude if not set.",
-    "TIME_ZONE": "Your timezone (e.g., America/Los_Angeles, Europe/Helsinki)",
-    "DA_VOICE_ID": "ElevenLabs voice ID for your main assistant",
-    "CLAUDE_CODE_MAX_OUTPUT_TOKENS": "Maximum tokens for Claude responses. Higher values allow longer outputs but cost more.",
-    "CLAUDE_SEARCH_MODEL": "Claude model for research (e.g., claude-sonnet-4-5)",
-    "GEMINI_MODEL": "Gemini model for research (e.g., gemini-2.5-pro)",
-    "GROK_MODEL": "Grok model for research (e.g., grok-4-1-fast-reasoning)",
-    "PERPLEXITY_MODEL": "Perplexity model for research (e.g., sonar-reasoning-pro)"
-  },
   "max_tokens": 4096,
+  "docxCli": {
+    "_comment": "Configuration for the docx-cli Word document generator",
+    "template": "/Users/zuul/doc_template.dotx",
+    "_templateNote": "Full path to the .dotx template file for document styling",
+    "outputDir": "~/Documents",
+    "_outputDirNote": "Optional: Default output directory for generated documents"
+  },
   "adaptiveResearch": {
     "_comment": "Configuration for the adaptive research system (conduct-research-adaptive)",
     "rateLimits": {
@@ -360,7 +360,15 @@
       "enabled": true,
       "ttlHours": 24,
       "maxEntries": 1000,
-      "bypassKeywords": ["latest", "current", "today", "now", "recent", "breaking", "2025"]
+      "bypassKeywords": [
+        "latest",
+        "current",
+        "today",
+        "now",
+        "recent",
+        "breaking",
+        "2025"
+      ]
     }
   }
 }

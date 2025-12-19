@@ -53,9 +53,9 @@ daily_tokens=""
 daily_cost=""
 project_cost=""
 session_cost=""
+cached_dir=""
 
 # Reset date files
-PROJECT_RESET_FILE="$claude_dir/cost_reset_project"
 SESSION_RESET_FILE="$claude_dir/cost_reset_session"
 
 # Check if cache exists and load it
@@ -64,14 +64,19 @@ if [ -f "$CACHE_FILE" ]; then
     source "$CACHE_FILE"
 fi
 
-# If cache is stale, missing, or we have no data, update it SYNCHRONOUSLY with timeout
+# If cache is stale, missing, we have no data, or directory changed, update SYNCHRONOUSLY
 cache_needs_update=false
 if [ ! -f "$CACHE_FILE" ] || [ -z "$daily_tokens" ]; then
     cache_needs_update=true
 elif [ -f "$CACHE_FILE" ]; then
-    cache_age=$(($(date +%s) - $(stat -f%m "$CACHE_FILE" 2>/dev/null || echo 0)))
-    if [ $cache_age -ge $CACHE_AGE ]; then
+    # Check if directory changed (project cost depends on current_dir)
+    if [ "$cached_dir" != "$current_dir" ]; then
         cache_needs_update=true
+    else
+        cache_age=$(($(date +%s) - $(stat -f%m "$CACHE_FILE" 2>/dev/null || echo 0)))
+        if [ $cache_age -ge $CACHE_AGE ]; then
+            cache_needs_update=true
+        fi
     fi
 fi
 
@@ -119,13 +124,21 @@ if [ "$cache_needs_update" = true ]; then
                 fi
             fi
 
-            # Get PROJECT cost (since project reset date)
-            if [ -f "$PROJECT_RESET_FILE" ]; then
-                project_date=$(cat "$PROJECT_RESET_FILE")
-                project_output=$(run_ccusage "--since $project_date")
-                project_cost=$(extract_cost "$project_output")
+            # Get PROJECT cost (prefix-matching aggregation)
+            # Convert path: /Users/zuul/Projects/PAI/.claude → -Users-zuul-Projects-PAI--claude
+            # Note: ccusage encodes /. as -- (dot is removed), / as -
+            project_prefix=$(echo "$current_dir" | sed 's|/\.|--|g; s|/|-|g')
+            project_cost=$(bunx ccusage -i --json 2>/dev/null | \
+                jq -r --arg prefix "$project_prefix" '
+                .projects | to_entries |
+                map(select(.key | startswith($prefix))) |
+                map(.value | map(.totalCost) | add) |
+                add // 0
+                ' 2>/dev/null)
+            if [ -n "$project_cost" ] && [ "$project_cost" != "null" ] && [ "$project_cost" != "0" ]; then
+                project_cost=$(echo "$project_cost" | LC_ALL=C awk '{printf "$%.2f", $1}')
             else
-                project_cost="$daily_cost"  # No reset = show total
+                project_cost="$daily_cost"  # Fallback
             fi
 
             # Get SESSION cost (since today OR session reset, whichever is later)
@@ -147,6 +160,7 @@ if [ "$cache_needs_update" = true ]; then
                 printf "daily_cost=\"%s\"\n" "${daily_cost//$/\\$}" >> "$CACHE_FILE"
                 printf "project_cost=\"%s\"\n" "${project_cost//$/\\$}" >> "$CACHE_FILE"
                 printf "session_cost=\"%s\"\n" "${session_cost//$/\\$}" >> "$CACHE_FILE"
+                echo "cached_dir=\"$current_dir\"" >> "$CACHE_FILE"
                 echo "cache_updated=\"$(date)\"" >> "$CACHE_FILE"
             fi
         fi
@@ -267,4 +281,4 @@ if [ -z "$daily_cost" ]; then cost_display="N/A"; fi
 if [ -z "$project_cost" ]; then project_display="N/A"; fi
 if [ -z "$session_cost" ]; then session_display="N/A"; fi
 
-printf "${LINE3_PRIMARY}💎 Total${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${cost_display}${RESET}${LINE3_PRIMARY}  📁 Project${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${project_display}${RESET}${LINE3_PRIMARY}  ⚡ Session${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${session_display}${RESET}\n"
+printf "${LINE3_PRIMARY}💎 Total${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${cost_display}${RESET}${LINE3_PRIMARY}  📁 Project${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${project_display}${RESET}${LINE3_PRIMARY}  ⚡ Today${RESET}${LINE3_PRIMARY}${SEPARATOR_COLOR}: ${RESET}${COST_COLOR}${session_display}${RESET}\n"
