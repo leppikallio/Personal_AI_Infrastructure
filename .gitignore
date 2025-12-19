@@ -73,7 +73,7 @@ credentials/
 .claude/file-history/*
 .claude/debug/*
 .claude/statsig/*
-.claude/history/*
+.claude/History/*
 .claude/shell-snapshots/*
 history.jsonl
 .claude/agent-sessions.json
@@ -92,4 +92,4 @@ history.jsonl
 .claude/pai_backups/
 .claude/.pai-sync-history
 .claude/stats-cache.json
-history/*
+History/*

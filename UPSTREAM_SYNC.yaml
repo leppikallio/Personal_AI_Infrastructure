@@ -6,23 +6,25 @@ upstream:
   remote_name: upstream
 
 last_sync:
-  date: "2025-12-09"
-  upstream_commit: b70e808d17729fe3a3775f9045c04a07cc13b345
-  upstream_tag: v0.9.1  # Full sync with native Fabric patterns
-  our_main_commit: eb9d747f4d4ecc14c7e0afe5ee9642cda0be0093
+  date: "2025-12-19"
+  upstream_commit: b5656d5fac6d8f218f94a9a94791cb728a1639c7
+  our_main_commit: # Will be updated after commit
   notes: |
-    Major sync: 15 of 16 upstream commits adopted (only Windows PowerShell skipped).
-    - 9 docs/images commits (diagrams, QUICKSTART, README formatting)
-    - /paiupdate command for intelligent future syncing
-    - Native Fabric patterns (248 patterns, 24K+ lines) - replaces CLI spawning
-    - setup.sh improvements and settings.json documentation
-    - TitleCase alignment (manual rename of 5 directories)
-    Removed broken fabric-repo submodule (185MB freed).
+    MEDIUM sync: Selective adoption of 3 upstream commits.
+    Adopted:
+    - Observability: midnight watcher fix (file-ingest.ts), CSS overflow fix (App.vue)
+    - History: Renamed history/ to History/ (Title Case), full UOCS directory structure
+    - HistorySystem.md: Upstream documentation for UOCS
+    Skipped:
+    - assistantName templates (3acc19c) - incompatible with our identity
+    - fabric-repo removal (e0c2685) - already done in prior sync
 
 previous_sync:
-  date: "2025-12-06"
-  upstream_commit: dabaea9b7ec12f8e080bbe52c4b8c1f85ec0fc23
-  notes: Synced images and doc improvements.
+  date: "2025-12-09"
+  upstream_commit: b70e808d17729fe3a3775f9045c04a07cc13b345
+  notes: |
+    Major sync: 15 of 16 upstream commits adopted.
+    Native Fabric patterns, TitleCase alignment, fabric-repo removal.
 
 # Files we deliberately keep different from upstream
 # DO NOT overwrite these during sync
@@ -52,6 +54,10 @@ skipped_commits:
   - commit: b25c358
     description: "Windows PowerShell support (bootstrap.ps1)"
     reason: "Not using Windows - macOS only"
+
+  - commit: 3acc19c
+    description: "assistantName templates ({{{assistantName}}} placeholders)"
+    reason: "Our fork has hardcoded identity - templates add complexity for no benefit"
 
 # TitleCase commits (ca9d331, 6f3dc2e) - manually aligned instead of cherry-picked
 # Cherry-pick failed due to hybrid state (some dirs already TitleCase, some lowercase)

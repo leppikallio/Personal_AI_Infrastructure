@@ -297,17 +297,18 @@ export function startFileIngestion(callback?: (events: HookEvent[]) => void): vo
   watchAgentSessions();
 
   // Watch today's file
-  const todayFile = getTodayEventsFile();
-  watchFile(todayFile);
+  let currentWatchedFile = getTodayEventsFile();
+  watchFile(currentWatchedFile);
 
-  // Check for new day's file every hour
+  // Check for new day's file every 5 minutes (reduced from 1 hour to minimize midnight gap)
   setInterval(() => {
     const newTodayFile = getTodayEventsFile();
-    if (newTodayFile !== todayFile) {
-      console.log('📅 New day detected, watching new file');
+    if (newTodayFile !== currentWatchedFile) {
+      console.log('📅 New day detected, watching new file:', newTodayFile);
       watchFile(newTodayFile);
+      currentWatchedFile = newTodayFile; // Update tracked file to prevent repeated detection
     }
-  }, 60 * 60 * 1000); // Check every hour
+  }, 5 * 60 * 1000); // Check every 5 minutes
 
   console.log('✅ File streaming started');
 }
