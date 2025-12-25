@@ -739,253 +739,115 @@ After retries complete:
 
 **Important:** Agents that still fail after retry should be noted in the pivot analysis as coverage gaps that may trigger Wave 2 specialists.
 
-### Step 2.5: Analyze Wave 1 & Determine Pivots (NEW - CRITICAL STEP)
+### Step 2.5: Analyze Wave 1 & Determine Pivots (AUTOMATED - TypeScript Quality Analyzer)
 
 **THIS IS THE KEY INNOVATION - Analyze Wave 1 results to make intelligent Wave 2 decisions.**
 
-**Step 2.5a: Quality Scoring (Component 2 from system-design.md)**
+**ALL COMPONENTS NOW AUTOMATED - Use the quality-analyzer TypeScript CLI:**
 
-For each Wave 1 agent result, calculate a quality score (0-100):
+Run comprehensive quality analysis using the TypeScript quality analyzer:
 
-```markdown
-Quality Scoring Algorithm:
+```bash
+cd ${PAI_DIR}/utilities/quality-analyzer
+bun ./cli.ts analyze "${SESSION_DIR}" --wave 1 --output both
 
-For each agent result file:
-
-1. Length Scoring (40 points max):
-   - char_count >= 2000: +40 points (excellent depth)
-   - char_count >= 1000: +25 points (good depth)
-   - char_count >= 500: +15 points (acceptable)
-   - char_count < 500: +5 points (insufficient)
-
-2. Source Counting (30 points max):
-   - source_count >= 5: +30 points (well-sourced)
-   - source_count >= 3: +20 points (adequately sourced)
-   - source_count >= 1: +10 points (minimal sourcing)
-   - source_count = 0: +0 points (no sources - red flag)
-
-3. Confidence Score (30 points max):
-   - Extract agent's self-reported confidence score
-   - Normalize to 30-point scale: (agent_confidence / 100) × 30
-
-Total Quality Score = Length + Sources + Confidence
-
-Quality Bands:
-- 80-100: EXCELLENT (high confidence, rich information)
-- 60-79: GOOD (solid findings, acceptable quality)
-- 40-59: MODERATE (usable but limited depth)
-- 0-39: POOR (insufficient or low-value output)
+echo "✅ Quality analysis complete - generated JSON and Markdown reports"
 ```
 
-**TODO:** Implement automated quality scoring - for now, manually assess each agent.
+This single command executes all 5 analysis components:
 
-Write quality analysis to: `${SESSION_DIR}/analysis/quality-scores.md`
+**Component 1: Agent Quality Scoring**
+- Scores each agent output (0-100) based on:
+  - Length (40 pts): char_count analysis
+  - Sources (30 pts): citation count
+  - Confidence (30 pts): self-reported confidence
+- Quality bands: EXCELLENT (80-100), GOOD (60-79), MODERATE (40-59), POOR (0-39)
+- Output: `${SESSION_DIR}/analysis/wave-1-quality-analysis.json` & `.md`
 
-Example:
-```markdown
-## Wave 1 Quality Scoring
+**Component 2: Domain Signal Detection**
+- Scans all Wave 1 outputs for cross-domain keywords
+- Keyword dictionaries: social_media, academic, technical, multimodal, security, news
+- Weights signals by agent quality: `signal_strength = matches × (quality_score / 100)`
+- Recommends specialists for strong signals (>150 = 3 agents, 100-150 = 2 agents, 50-100 = 1 agent)
+- Output: Domain signals included in analysis JSON
 
-| Agent | Char Count | Sources | Confidence | Quality Score | Band |
-|-------|-----------|---------|------------|---------------|------|
-| perplexity-1 | 1850 | 6 | 85 | 81 | EXCELLENT |
-| claude-1 | 1200 | 4 | 70 | 66 | GOOD |
-| grok-1 | 950 | 3 | 65 | 59 | MODERATE |
-| gemini-1 | 450 | 1 | 50 | 30 | POOR |
+**Component 3: Coverage Gap Analysis**
+- Extracts self-reported gaps from agent metadata:
+  - "Limited Coverage" sections
+  - "Alternative Domains" suggestions
+  - "Tool Gaps" reports
+- Identifies gaps reported by 2+ agents (HIGH priority)
+- Maps gaps to specialist agent types
+- Output: Coverage gaps included in analysis JSON
 
-**Average Quality Score:** 59 (MODERATE)
-**Low Quality Agents:** 1 (gemini-1)
-**Recommendation:** Consider retry or specialist replacement for gemini-1
+**Component 4: Platform Coverage Validation (AD-008)**
+- Validates expected platforms were searched
+- Loads `${SESSION_DIR}/analysis/wave-1-platform-coverage.json` (if exists)
+- Identifies uncovered perspectives (0% platform coverage)
+- Triggers Wave 2 for missing platform coverage
+- Output: Platform coverage validation included in analysis JSON
+
+**Component 5: Pivot Decision Engine**
+- Aggregates all components into final Wave 2 decision
+- Decision rules:
+  - ANY score <40 → Retry/replace agent (CRITICAL)
+  - AVG score <60 → Consider Wave 2
+  - Strong signal >150 → Launch 3 specialists
+  - Coverage gaps ≥2 → Launch specialists to fill
+  - Platform coverage =0% → Launch Wave 2
+- Deduplicates specialist recommendations
+- Generates specialist allocation map
+- Output: `${SESSION_DIR}/analysis/wave-1-pivot-decision.json`
+
+**Generated Files:**
+- `${SESSION_DIR}/analysis/wave-1-quality-analysis.json` - Full analysis (all components)
+- `${SESSION_DIR}/analysis/wave-1-quality-analysis.md` - Human-readable report
+- `${SESSION_DIR}/analysis/wave-1-pivot-decision.json` - Pivot decision for Wave 2 launch
+
+**Example Pivot Decision Output:**
+```json
+{
+  "shouldLaunchWave2": true,
+  "confidence": 85,
+  "rationale": [
+    "Quality: 1 agent(s) scored below 40 (retry threshold)",
+    "Signals: 1 strong domain signal(s) detected",
+    "Gaps: 2 HIGH priority gap(s) and 1 MEDIUM priority gap(s)"
+  ],
+  "specialists": [
+    {
+      "agentType": "grok-researcher",
+      "track": "standard",
+      "focus": "Social media specialist: Strong social_media signal (strength: 185)",
+      "platforms": [],
+      "rationale": "Domain signal social_media with strength 185 exceeds HIGH threshold (150)",
+      "priority": "HIGH",
+      "source": "domain_signal"
+    }
+  ],
+  "specialistAllocation": {
+    "perplexity-researcher": 1,
+    "claude-researcher": 0,
+    "gemini-researcher": 1,
+    "grok-researcher": 2
+  }
+}
 ```
 
-**Step 2.5b: Domain Signal Detection (Component 3 from system-design.md)**
+**Read the pivot decision to determine Wave 2 launch:**
+```bash
+PIVOT_DECISION=$(cat "${SESSION_DIR}/analysis/wave-1-pivot-decision.json")
+SHOULD_LAUNCH_WAVE2=$(echo "$PIVOT_DECISION" | jq -r '.shouldLaunchWave2')
+SPECIALIST_COUNT=$(echo "$PIVOT_DECISION" | jq '[.specialistAllocation | to_entries[] | .value] | add')
 
-Scan all Wave 1 results for cross-domain signals:
-
-```markdown
-Domain Signal Detection Algorithm:
-
-Domain Keyword Dictionaries:
-- social_media: ['twitter', 'X', 'reddit', 'social', 'viral', 'trending', 'hashtag', 'influencer', 'tiktok', 'instagram']
-- academic: ['paper', 'arxiv', 'journal', 'study', 'research', 'citation', 'peer review', 'academic', 'scholar']
-- technical: ['implementation', 'code', 'api', 'framework', 'architecture', 'algorithm', 'library', 'github', 'documentation']
-- multimodal: ['video', 'image', 'visual', 'youtube', 'diagram', 'screenshot', 'graphic', 'animation']
-
-For each Wave 1 agent result:
-  For each domain:
-    1. Count keyword matches (case-insensitive)
-    2. Extract agent's self-reported domain signals from structured metadata
-    3. Weight by agent quality score: signal_strength = matches × (quality_score / 100)
-
-Aggregate across all agents:
-  total_signal_strength[domain] = sum(weighted signals from all agents)
-
-Signal Strength Bands:
-- >150: STRONG signal - Launch 3 specialists for this domain
-- 100-150: MODERATE signal - Launch 2 specialists
-- 50-100: WEAK signal - Launch 1 specialist
-- <50: NO signal - Skip this domain
+if [ "$SHOULD_LAUNCH_WAVE2" = "true" ]; then
+  echo "🚀 WAVE 2 TRIGGERED - Launching $SPECIALIST_COUNT specialists"
+else
+  echo "✅ WAVE 1 SUFFICIENT - Skipping Wave 2, proceeding to synthesis"
+fi
 ```
 
-**TODO:** Implement automated domain signal detection - for now, manually count from structured metadata.
-
-Write signal analysis to: `${SESSION_DIR}/analysis/domain-signals.md`
-
-Example:
-```markdown
-## Domain Signal Analysis (Wave 1)
-
-**Total Agents Analyzed:** 5
-
-**Detected Signals:**
-
-1. **Social Media: Signal Strength = 185 (STRONG)**
-   - Keyword mentions: 15 across 4 agents
-   - Keywords: twitter(7), X(5), reddit(3)
-   - Agent reports:
-     - perplexity-1: "Social Media (STRONG) - Twitter mentioned 8 times"
-     - claude-1: "Social Media (MODERATE) - Reddit discussions prevalent"
-   - **Recommendation:** Launch 3× grok-researcher (native X access)
-
-2. **Academic: Signal Strength = 95 (WEAK)**
-   - Keyword mentions: 6 across 2 agents
-   - Keywords: paper(3), arxiv(2), research(1)
-   - Agent reports:
-     - perplexity-1: "Academic (WEAK) - 2 arxiv papers referenced"
-   - **Recommendation:** Launch 1× perplexity-researcher
-
-3. **Technical: Signal Strength = 45 (NO SIGNAL)**
-   - Keyword mentions: 3 across 1 agent
-   - **Recommendation:** Skip
-
-**Top Signals for Wave 2:**
-1. Social Media (185) - 3 specialists
-2. Academic (95) - 1 specialist
-```
-
-**Step 2.5c: Coverage Gap Analysis (Component 4 from system-design.md)**
-
-Extract self-reported coverage gaps from structured metadata:
-
-```markdown
-Coverage Gap Identification:
-
-For each Wave 1 agent result:
-  1. Extract "Limited Coverage" section from structured metadata
-  2. Extract "Alternative Domains" suggestions
-  3. Extract "Recommended Follow-up" section
-
-Identify gaps when:
-  - 2+ agents report the same limitation
-  - Agent explicitly says "outside my capability" or "limited access"
-  - Agent suggests alternative domain/specialist
-
-Map gaps to specialists:
-  - "Social media content" / "Twitter data" → grok-researcher
-  - "Academic depth" / "Research papers" → perplexity-researcher
-  - "Technical implementation" / "Code examples" → claude-researcher
-  - "Visual/video content" / "Multimedia" → gemini-researcher
-```
-
-Write gap analysis to: `${SESSION_DIR}/analysis/coverage-gaps.md`
-
-Example:
-```markdown
-## Coverage Gap Analysis (Wave 1)
-
-**Gap 1: Real-time Twitter/X Data**
-- Reported by: perplexity-1, claude-1, gemini-1 (3 agents)
-- Quotes:
-  - perplexity-1: "Limited access to real-time social media discussions"
-  - claude-1: "Twitter/X mentioned frequently but couldn't access platform data"
-  - gemini-1: "Suggest grok-researcher for X-specific content"
-- **Recommendation:** Launch 2× grok-researcher (native X access)
-
-**Gap 2: Visual Tutorials**
-- Reported by: claude-1 (1 agent)
-- Quotes:
-  - claude-1: "Found tool descriptions but no visual tutorials or video guides"
-- **Recommendation:** Launch 1× gemini-researcher (multimodal search)
-
-**Total Gaps Identified:** 2
-**Recommended Wave 2 Specialists:** 3 agents (2 grok + 1 gemini)
-```
-
-**Step 2.5d: Pivot Decision Matrix (Component 5 from system-design.md)**
-
-Combine quality scores, domain signals, and coverage gaps to make final Wave 2 decision:
-
-```markdown
-Pivot Decision Logic:
-
-FLAGS:
-1. LOW_QUALITY_RETRY: any(quality_score < 40)
-   → Recommendation: Retry failed agents with different type
-
-2. STRONG_PIVOT_DETECTED: max(domain_signal_strength) > 150
-   → Recommendation: Launch 3 specialists for top domain
-
-3. GAPS_IDENTIFIED: count(coverage_gaps) >= 2
-   → Recommendation: Launch specialists to fill gaps
-
-4. SUFFICIENT_COVERAGE: all(quality_scores >= 60) AND max(domain_signals) < 100 AND gaps == 0
-   → Recommendation: Skip Wave 2, proceed to synthesis
-
-5. MODERATE_PIVOT: Otherwise
-   → Recommendation: Launch 2-3 specialists for top 1-2 signals
-
-FINAL DECISION:
-- Count flags
-- Calculate recommended specialist count
-- Allocate specialists by domain/gap priority
-- Generate Wave 2 execution plan
-```
-
-Write pivot decision to: `${SESSION_DIR}/analysis/pivot-decision.md`
-
-Example:
-```markdown
-## Pivot Decision Matrix
-
-### Input Summary
-- Wave 1 Agents: 5
-- Average Quality Score: 67 (GOOD)
-- Top Domain Signal: Social Media (185 - STRONG)
-- Coverage Gaps: 2 identified
-- Low Quality Agents: 1 (gemini-1)
-
-### Decision Flags
-✅ STRONG_PIVOT_DETECTED (Social Media: 185)
-✅ GAPS_IDENTIFIED (2 gaps: Twitter data, Visual content)
-⚠️ LOW_QUALITY_RETRY (gemini-1: score 30)
-❌ SUFFICIENT_COVERAGE (pivot needed)
-
-### Wave 2 Execution Plan
-
-**Decision: LAUNCH WAVE 2**
-
-**Specialists to Launch:** 4 agents
-
-1. **grok-researcher × 2** (Social Media Pivot - STRONG signal)
-   - Focus: Twitter/X OSINT tools and real-time discussions
-   - Context: Wave 1 found 15 social media mentions, 3 agents reported X data gap
-   - Priority: HIGH
-
-2. **gemini-researcher × 1** (Visual Content Gap)
-   - Focus: Video tutorials and visual examples
-   - Context: claude-1 reported missing visual content
-   - Priority: MEDIUM
-
-3. **perplexity-researcher × 1** (Academic Signal - WEAK + retry low quality)
-   - Focus: Research papers and academic sources
-   - Context: Wave 1 signal strength 95, replaces failed gemini-1 from Wave 1
-   - Priority: LOW-MEDIUM
-
-**Total Wave 2 Agents:** 4
-**Expected Outcome:** Deep social media coverage + visual examples + academic depth
-**Estimated Time:** 15-30 seconds (parallel execution)
-```
-
-**Step 2.5e: Platform Coverage Analysis (AD-008 - NEW)**
+**Step 2.5e: Platform Coverage Analysis (AD-008 - Integrated)**
 
 **Extract platform coverage from Wave 1 agent outputs:**
 

@@ -13,12 +13,12 @@ import { serve } from 'bun';
 const envPath = join(homedir(), '.env');
 if (existsSync(envPath)) {
   const envContent = await Bun.file(envPath).text();
-  envContent.split('\n').forEach((line) => {
+  for (const line of envContent.split('\n')) {
     const [key, value] = line.split('=');
     if (key && value && !key.startsWith('#')) {
       process.env[key.trim()] = value.trim();
     }
-  });
+  }
 }
 
 const PORT = Number.parseInt(process.env.PORT || '8888');
@@ -45,7 +45,7 @@ function sanitizeForShell(input: string): string {
 }
 
 // Validate and sanitize user input
-function validateInput(input: any): { valid: boolean; error?: string } {
+function validateInput(input: unknown): { valid: boolean; error?: string } {
   if (!input || typeof input !== 'string') {
     return { valid: false, error: 'Invalid input type' };
   }
@@ -266,15 +266,13 @@ const _server = serve({
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           status: 200,
         });
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('Notification error:', error);
-        return new Response(
-          JSON.stringify({ status: 'error', message: error.message || 'Internal server error' }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: error.message?.includes('Invalid') ? 400 : 500,
-          }
-        );
+        const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+        return new Response(JSON.stringify({ status: 'error', message: errorMessage }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: errorMessage.includes('Invalid') ? 400 : 500,
+        });
       }
     }
 
@@ -295,15 +293,13 @@ const _server = serve({
             status: 200,
           }
         );
-      } catch (error: any) {
+      } catch (error: unknown) {
         console.error('PAI notification error:', error);
-        return new Response(
-          JSON.stringify({ status: 'error', message: error.message || 'Internal server error' }),
-          {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-            status: error.message?.includes('Invalid') ? 400 : 500,
-          }
-        );
+        const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+        return new Response(JSON.stringify({ status: 'error', message: errorMessage }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          status: errorMessage.includes('Invalid') ? 400 : 500,
+        });
       }
     }
 

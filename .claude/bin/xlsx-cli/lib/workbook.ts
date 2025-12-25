@@ -3,9 +3,9 @@
  * Handles Excel workbook creation, data population, and saving
  */
 
-import ExcelJS from "exceljs";
-import * as fs from "fs";
-import type { DataTable } from "./readers.ts";
+import * as fs from 'node:fs';
+import ExcelJS from 'exceljs';
+import type { DataTable } from './readers.ts';
 
 export interface WorkbookOptions {
   title?: string;
@@ -74,9 +74,9 @@ export function addDataToSheet(
     const headerRow = worksheet.getRow(1);
     headerRow.font = { bold: true };
     headerRow.fill = {
-      type: "pattern",
-      pattern: "solid",
-      fgColor: { argb: "FFE0E0E0" },
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' },
     };
 
     // Apply custom header style if provided
@@ -98,16 +98,12 @@ export function addDataToSheet(
 /**
  * Calculate optimal column width based on content
  */
-function calculateColumnWidth(
-  header: string,
-  data: DataTable,
-  key: string
-): number {
+function calculateColumnWidth(header: string, data: DataTable, key: string): number {
   let maxLength = header.length;
 
   for (const row of data) {
     const value = row[key];
-    const length = String(value ?? "").length;
+    const length = String(value ?? '').length;
     if (length > maxLength) {
       maxLength = length;
     }
@@ -120,12 +116,9 @@ function calculateColumnWidth(
 /**
  * Auto-fit all columns in a worksheet
  */
-export function autoFitColumns(
-  worksheet: ExcelJS.Worksheet,
-  data?: DataTable
-): void {
-  worksheet.columns.forEach((column) => {
-    if (!column.key) return;
+export function autoFitColumns(worksheet: ExcelJS.Worksheet, data?: DataTable): void {
+  for (const column of worksheet.columns) {
+    if (!column.key) continue;
 
     let maxLength = column.header?.toString().length ?? 10;
 
@@ -133,7 +126,7 @@ export function autoFitColumns(
     if (data) {
       for (const row of data) {
         const value = row[column.key as string];
-        const length = String(value ?? "").length;
+        const length = String(value ?? '').length;
         if (length > maxLength) {
           maxLength = length;
         }
@@ -141,7 +134,7 @@ export function autoFitColumns(
     } else {
       // Check actual cell values
       column.eachCell?.({ includeEmpty: false }, (cell) => {
-        const length = String(cell.value ?? "").length;
+        const length = String(cell.value ?? '').length;
         if (length > maxLength) {
           maxLength = length;
         }
@@ -149,26 +142,21 @@ export function autoFitColumns(
     }
 
     column.width = Math.min(Math.max(maxLength + 2, 10), 50);
-  });
+  }
 }
 
 /**
  * Save workbook to file
  */
-export async function saveWorkbook(
-  workbook: ExcelJS.Workbook,
-  outputPath: string
-): Promise<void> {
-  const resolvedPath = outputPath.replace(/^~/, process.env.HOME || "");
+export async function saveWorkbook(workbook: ExcelJS.Workbook, outputPath: string): Promise<void> {
+  const resolvedPath = outputPath.replace(/^~/, process.env.HOME || '');
   await workbook.xlsx.writeFile(resolvedPath);
 }
 
 /**
  * Save workbook to buffer
  */
-export async function workbookToBuffer(
-  workbook: ExcelJS.Workbook
-): Promise<Buffer> {
+export async function workbookToBuffer(workbook: ExcelJS.Workbook): Promise<Buffer> {
   const buffer = await workbook.xlsx.writeBuffer();
   return Buffer.from(buffer);
 }
@@ -177,7 +165,7 @@ export async function workbookToBuffer(
  * Load workbook from file
  */
 export async function loadWorkbook(filePath: string): Promise<ExcelJS.Workbook> {
-  const resolvedPath = filePath.replace(/^~/, process.env.HOME || "");
+  const resolvedPath = filePath.replace(/^~/, process.env.HOME || '');
 
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`File not found: ${resolvedPath}`);
@@ -199,12 +187,12 @@ export function getWorksheet(
     // Return first worksheet
     const worksheet = workbook.worksheets[0];
     if (!worksheet) {
-      throw new Error("Workbook has no worksheets");
+      throw new Error('Workbook has no worksheets');
     }
     return worksheet;
   }
 
-  if (typeof sheetIdentifier === "number") {
+  if (typeof sheetIdentifier === 'number') {
     const worksheet = workbook.worksheets[sheetIdentifier];
     if (!worksheet) {
       throw new Error(`Worksheet at index ${sheetIdentifier} not found`);
@@ -216,8 +204,8 @@ export function getWorksheet(
   const worksheet = workbook.getWorksheet(sheetIdentifier);
   if (!worksheet) {
     // Try to parse as index
-    const index = parseInt(sheetIdentifier, 10);
-    if (!isNaN(index)) {
+    const index = Number.parseInt(sheetIdentifier, 10);
+    if (!Number.isNaN(index)) {
       const ws = workbook.worksheets[index];
       if (ws) return ws;
     }
@@ -247,10 +235,7 @@ export interface SheetInfo {
   columnCount: number;
 }
 
-export function getWorkbookInfo(
-  workbook: ExcelJS.Workbook,
-  filename: string
-): WorkbookInfo {
+export function getWorkbookInfo(workbook: ExcelJS.Workbook, filename: string): WorkbookInfo {
   const sheets: SheetInfo[] = workbook.worksheets.map((ws, index) => ({
     index: index + 1,
     name: ws.name,
@@ -273,10 +258,7 @@ export function getWorkbookInfo(
 /**
  * Append data to existing worksheet
  */
-export function appendDataToSheet(
-  worksheet: ExcelJS.Worksheet,
-  data: DataTable
-): void {
+export function appendDataToSheet(worksheet: ExcelJS.Worksheet, data: DataTable): void {
   if (data.length === 0) return;
 
   // Add each row at the end
@@ -288,24 +270,20 @@ export function appendDataToSheet(
 /**
  * Set cell value
  */
-export function setCellValue(
-  worksheet: ExcelJS.Worksheet,
-  cellRef: string,
-  value: unknown
-): void {
+export function setCellValue(worksheet: ExcelJS.Worksheet, cellRef: string, value: unknown): void {
   const cell = worksheet.getCell(cellRef);
 
   // Try to parse as number if it looks like one
-  if (typeof value === "string") {
-    const numValue = parseFloat(value);
-    if (!isNaN(numValue) && value === numValue.toString()) {
+  if (typeof value === 'string') {
+    const numValue = Number.parseFloat(value);
+    if (!Number.isNaN(numValue) && value === numValue.toString()) {
       cell.value = numValue;
       return;
     }
 
     // Try to parse as date
     const dateValue = new Date(value);
-    if (!isNaN(dateValue.getTime()) && value.includes("-")) {
+    if (!Number.isNaN(dateValue.getTime()) && value.includes('-')) {
       cell.value = dateValue;
       return;
     }

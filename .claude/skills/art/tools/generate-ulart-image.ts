@@ -1444,7 +1444,7 @@ async function convertImageFormat(
   inputPath: string,
   outputPath: string,
   format: 'png' | 'webp' | 'jpeg',
-  quality: number = 85
+  quality = 85
 ): Promise<void> {
   const image = sharp(inputPath);
 
@@ -1486,7 +1486,8 @@ async function generateWithNanoBananaPro(
   // Prepare content parts - use flat array format per SDK docs
   // Official example shows: [{ text: "prompt" }, { inlineData }, { inlineData }]
   // TEXT FIRST, then images
-  const contentParts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> = [];
+  const contentParts: Array<{ inlineData: { mimeType: string; data: string } } | { text: string }> =
+    [];
 
   // Add text prompt FIRST (per official docs order)
   contentParts.push({ text: prompt });
@@ -1513,7 +1514,9 @@ async function generateWithNanoBananaPro(
           mimeType = 'image/webp';
           break;
         default:
-          throw new CLIError(`Unsupported image format: ${ext}. Supported: .png, .jpg, .jpeg, .webp`);
+          throw new CLIError(
+            `Unsupported image format: ${ext}. Supported: .png, .jpg, .jpeg, .webp`
+          );
       }
 
       contentParts.push({
@@ -1536,7 +1539,11 @@ async function generateWithNanoBananaPro(
       const imagePromptPrefix = 'Generate an image depicting the following scene:\n\n';
       const finalContents = contentParts.map((part) => {
         // Only prefix text parts, and only when no reference images
-        if ('text' in part && !part.text.startsWith('Generate an image') && (!referenceImages || referenceImages.length === 0)) {
+        if (
+          'text' in part &&
+          !part.text.startsWith('Generate an image') &&
+          (!referenceImages || referenceImages.length === 0)
+        ) {
           return { text: imagePromptPrefix + part.text };
         }
         return part;
@@ -1544,7 +1551,7 @@ async function generateWithNanoBananaPro(
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-image-preview',
-        contents: finalContents,  // Flat array: [{ text }, { inlineData }, { inlineData }]
+        contents: finalContents, // Flat array: [{ text }, { inlineData }, { inlineData }]
         config: {
           // Use both TEXT and IMAGE to allow model to communicate issues,
           // but prefix prompt with explicit image generation intent
@@ -1728,15 +1735,19 @@ async function main(): Promise<void> {
           resolvedRefImages = illust.reference_images.map((imgPath: string) => {
             const resolvedPath = resolve(projectRoot, imgPath);
             if (!existsSync(resolvedPath)) {
-              throw new CLIError(`Reference image not found: ${resolvedPath}\n  (Project root: ${projectRoot})`);
+              throw new CLIError(
+                `Reference image not found: ${resolvedPath}\n  (Project root: ${projectRoot})`
+              );
             }
             return resolvedPath;
           });
         }
 
-        console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
         console.log(`📌 Generating: ${illust.name}`);
-        console.log(`   Prompt: ${illust.prompt.slice(0, 80)}${illust.prompt.length > 80 ? '...' : ''}`);
+        console.log(
+          `   Prompt: ${illust.prompt.slice(0, 80)}${illust.prompt.length > 80 ? '...' : ''}`
+        );
         console.log(`   Model: ${model}`);
         console.log(`   Size: ${size}, Aspect: ${aspectRatio}, Format: ${format}`);
         if (resolvedRefImages && resolvedRefImages.length > 0) {
@@ -1746,7 +1757,7 @@ async function main(): Promise<void> {
           }
         }
         console.log(`   Output: ${resolvedOutput}`);
-        console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+        console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
         // Ensure output directory exists
         const outputDir = dirname(resolvedOutput);
@@ -1776,7 +1787,12 @@ async function main(): Promise<void> {
           await generateWithFlux(illust.prompt, aspectRatio as ReplicateSize, tempOutput, model);
         } else if (model === 'sdxl') {
           // Map aspect ratio to SDXL size
-          const sdxlSize = aspectRatio === '16:9' ? '1536x1024' : aspectRatio === '9:16' ? '1024x1536' : '1024x1024';
+          const sdxlSize =
+            aspectRatio === '16:9'
+              ? '1536x1024'
+              : aspectRatio === '9:16'
+                ? '1024x1536'
+                : '1024x1024';
           await generateWithSDXL(illust.prompt, sdxlSize as SDXLSize, tempOutput);
         }
 
@@ -1864,7 +1880,10 @@ async function main(): Promise<void> {
       }
 
       // Reference images from frontmatter (CLI takes precedence)
-      if (frontmatter.reference_images && (!args.referenceImages || args.referenceImages.length === 0)) {
+      if (
+        frontmatter.reference_images &&
+        (!args.referenceImages || args.referenceImages.length === 0)
+      ) {
         const referenceImages = Array.isArray(frontmatter.reference_images)
           ? frontmatter.reference_images
           : [frontmatter.reference_images];

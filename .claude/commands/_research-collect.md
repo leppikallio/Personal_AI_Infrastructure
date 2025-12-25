@@ -40,10 +40,15 @@ After completing this phase:
 
 ## ORCHESTRATION WORKFLOW
 
-### Sub-Phase 1: Execute (SlashCommand: /_research-collect-execute)
+**⚠️ CRITICAL: YOU MUST EXECUTE BOTH SUB-PHASES IN ORDER**
 
+### Sub-Phase 1: Execute Research Collection
+
+**INVOKE THIS SUB-COMMAND NOW:**
+
+Use the SlashCommand tool to run:
 ```
-SlashCommand: /_research-collect-execute $SESSION_DIR
+/_research-collect-execute $SESSION_DIR
 ```
 
 **What it does:**
@@ -71,11 +76,16 @@ SlashCommand: /_research-collect-execute $SESSION_DIR
 
 ---
 
-### Sub-Phase 2: Validate (SlashCommand: /_research-collect-validate)
+### Sub-Phase 2: Validate Citations ⚠️ MANDATORY - DO NOT SKIP
 
+**INVOKE THIS SUB-COMMAND NOW:**
+
+Use the SlashCommand tool to run:
 ```
-SlashCommand: /_research-collect-validate $SESSION_DIR
+/_research-collect-validate $SESSION_DIR
 ```
+
+**⚠️ WARNING: This step is MANDATORY and was being SKIPPED in previous sessions!**
 
 **What it does:**
 - Extracts all citations from Wave 1 and Wave 2 outputs

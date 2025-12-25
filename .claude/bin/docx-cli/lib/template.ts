@@ -3,14 +3,14 @@
  * Extracts styles, headers, footers, and settings from .dotx templates
  */
 
-import PizZip from "pizzip";
-import * as fs from "fs";
-import * as path from "path";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import PizZip from 'pizzip';
 
 export interface TemplateStyle {
   id: string;
   name: string;
-  type: "paragraph" | "character" | "table" | "numbering";
+  type: 'paragraph' | 'character' | 'table' | 'numbering';
   basedOn?: string;
 }
 
@@ -48,7 +48,7 @@ export interface ExtractedTemplate {
  * Load and parse a .dotx template file
  */
 export async function loadTemplate(templatePath: string): Promise<ExtractedTemplate> {
-  const resolvedPath = templatePath.replace(/^~/, process.env.HOME || "");
+  const resolvedPath = templatePath.replace(/^~/, process.env.HOME || '');
 
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`Template not found: ${resolvedPath}`);
@@ -58,19 +58,19 @@ export async function loadTemplate(templatePath: string): Promise<ExtractedTempl
   const zip = new PizZip(content);
 
   // Extract styles.xml
-  const stylesXml = extractFile(zip, "word/styles.xml");
+  const stylesXml = extractFile(zip, 'word/styles.xml');
   if (!stylesXml) {
-    throw new Error("Template missing styles.xml");
+    throw new Error('Template missing styles.xml');
   }
 
   // Extract numbering.xml (for list styles)
-  const numberingXml = extractFile(zip, "word/numbering.xml");
+  const numberingXml = extractFile(zip, 'word/numbering.xml');
 
   // Extract settings.xml
-  const settingsXml = extractFile(zip, "word/settings.xml") || "";
+  const settingsXml = extractFile(zip, 'word/settings.xml') || '';
 
   // Extract theme
-  const themeXml = extractFile(zip, "word/theme/theme1.xml");
+  const themeXml = extractFile(zip, 'word/theme/theme1.xml');
 
   // Extract headers
   const headers = new Map<string, string>();
@@ -92,7 +92,7 @@ export async function loadTemplate(templatePath: string): Promise<ExtractedTempl
 
   // Extract media files
   const media = new Map<string, TemplateMedia>();
-  const mediaFiles = Object.keys(zip.files).filter(f => f.startsWith("word/media/"));
+  const mediaFiles = Object.keys(zip.files).filter((f) => f.startsWith('word/media/'));
   for (const mediaPath of mediaFiles) {
     const filename = path.basename(mediaPath);
     const data = zip.file(mediaPath)?.asNodeBuffer();
@@ -106,7 +106,7 @@ export async function loadTemplate(templatePath: string): Promise<ExtractedTempl
   }
 
   // Extract relationships
-  const documentRels = extractFile(zip, "word/_rels/document.xml.rels") || "";
+  const documentRels = extractFile(zip, 'word/_rels/document.xml.rels') || '';
   const headerRels = new Map<string, string>();
   for (let i = 1; i <= 10; i++) {
     const rels = extractFile(zip, `word/_rels/header${i}.xml.rels`);
@@ -149,15 +149,15 @@ function extractFile(zip: PizZip, filePath: string): string | null {
 function getMediaContentType(filename: string): string {
   const ext = path.extname(filename).toLowerCase();
   const types: Record<string, string> = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".svg": "image/svg+xml",
-    ".emf": "image/x-emf",
-    ".wmf": "image/x-wmf",
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.svg': 'image/svg+xml',
+    '.emf': 'image/x-emf',
+    '.wmf': 'image/x-wmf',
   };
-  return types[ext] || "application/octet-stream";
+  return types[ext] || 'application/octet-stream';
 }
 
 /**
@@ -172,18 +172,24 @@ function parseStyles(stylesXml: string): TemplateStyle[] {
   const nameRegex = /<w:name[^>]*w:val="([^"]*)"/;
   const basedOnRegex = /<w:basedOn[^>]*w:val="([^"]*)"/;
 
-  let match: RegExpExecArray | null;
-  while ((match = styleRegex.exec(stylesXml)) !== null) {
+  let match: RegExpExecArray | null = styleRegex.exec(stylesXml);
+  while (match !== null) {
     const type = match[1];
     const id = match[2];
 
     // Skip if we didn't capture both groups
-    if (!type || !id) continue;
+    if (!type || !id) {
+      match = styleRegex.exec(stylesXml);
+      continue;
+    }
 
     // Find the closing tag to get the full style definition
     const startIndex = match.index;
-    const endIndex = stylesXml.indexOf("</w:style>", startIndex);
-    if (endIndex === -1) continue;
+    const endIndex = stylesXml.indexOf('</w:style>', startIndex);
+    if (endIndex === -1) {
+      match = styleRegex.exec(stylesXml);
+      continue;
+    }
 
     const styleContent = stylesXml.slice(startIndex, endIndex);
 
@@ -193,9 +199,10 @@ function parseStyles(stylesXml: string): TemplateStyle[] {
     styles.push({
       id,
       name: nameMatch?.[1] ?? id,
-      type: type as TemplateStyle["type"],
+      type: type as TemplateStyle['type'],
       basedOn: basedOnMatch?.[1],
     });
+    match = styleRegex.exec(stylesXml);
   }
 
   return styles;
@@ -207,35 +214,35 @@ function parseStyles(stylesXml: string): TemplateStyle[] {
 export function listStyles(template: ExtractedTemplate): string {
   const output: string[] = [];
 
-  output.push("=== Paragraph Styles ===");
-  const paragraphStyles = template.styles.filter(s => s.type === "paragraph");
+  output.push('=== Paragraph Styles ===');
+  const paragraphStyles = template.styles.filter((s) => s.type === 'paragraph');
   for (const style of paragraphStyles) {
-    const basedOn = style.basedOn ? ` (based on: ${style.basedOn})` : "";
+    const basedOn = style.basedOn ? ` (based on: ${style.basedOn})` : '';
     output.push(`  ${style.id}: ${style.name}${basedOn}`);
   }
 
-  output.push("\n=== Character Styles ===");
-  const charStyles = template.styles.filter(s => s.type === "character");
+  output.push('\n=== Character Styles ===');
+  const charStyles = template.styles.filter((s) => s.type === 'character');
   for (const style of charStyles) {
     output.push(`  ${style.id}: ${style.name}`);
   }
 
-  output.push("\n=== Table Styles ===");
-  const tableStyles = template.styles.filter(s => s.type === "table");
+  output.push('\n=== Table Styles ===');
+  const tableStyles = template.styles.filter((s) => s.type === 'table');
   for (const style of tableStyles) {
     output.push(`  ${style.id}: ${style.name}`);
   }
 
-  output.push("\n=== Headers/Footers ===");
+  output.push('\n=== Headers/Footers ===');
   output.push(`  Headers: ${template.headers.size}`);
   output.push(`  Footers: ${template.footers.size}`);
 
-  output.push("\n=== Media Files ===");
+  output.push('\n=== Media Files ===');
   for (const [filename] of template.media) {
     output.push(`  ${filename}`);
   }
 
-  return output.join("\n");
+  return output.join('\n');
 }
 
 /**
@@ -243,7 +250,7 @@ export function listStyles(template: ExtractedTemplate): string {
  */
 export function getHeadingStyleId(template: ExtractedTemplate, level: number): string {
   const style = template.styles.find(
-    s => s.id === `Heading${level}` || s.name === `heading ${level}`
+    (s) => s.id === `Heading${level}` || s.name === `heading ${level}`
   );
   return style?.id || `Heading${level}`;
 }
@@ -252,5 +259,5 @@ export function getHeadingStyleId(template: ExtractedTemplate, level: number): s
  * Check if template has a specific style
  */
 export function hasStyle(template: ExtractedTemplate, styleId: string): boolean {
-  return template.styles.some(s => s.id === styleId || s.name === styleId);
+  return template.styles.some((s) => s.id === styleId || s.name === styleId);
 }

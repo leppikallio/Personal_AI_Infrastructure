@@ -67,6 +67,7 @@
       "Bash(> /dev/sda)"
     ]
   },
+  "model": "opus",
   "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [],
   "hooks": {
@@ -360,15 +361,7 @@
       "enabled": true,
       "ttlHours": 24,
       "maxEntries": 1000,
-      "bypassKeywords": [
-        "latest",
-        "current",
-        "today",
-        "now",
-        "recent",
-        "breaking",
-        "2025"
-      ]
+      "bypassKeywords": ["latest", "current", "today", "now", "recent", "breaking", "2025"]
     }
   }
 }

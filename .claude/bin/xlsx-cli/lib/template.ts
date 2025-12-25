@@ -3,10 +3,10 @@
  * Handles Excel template (.xltx/.xlsx) loading and data insertion
  */
 
-import ExcelJS from "exceljs";
-import * as fs from "fs";
-import type { DataTable } from "./readers.ts";
-import { addDataToSheet, autoFitColumns } from "./workbook.ts";
+import * as fs from 'node:fs';
+import ExcelJS from 'exceljs';
+import type { DataTable } from './readers.ts';
+import { addDataToSheet, autoFitColumns } from './workbook.ts';
 
 export interface TemplateOptions {
   /** Sheet name or index to populate (default: first sheet) */
@@ -22,10 +22,8 @@ export interface TemplateOptions {
 /**
  * Load template file
  */
-export async function loadTemplate(
-  templatePath: string
-): Promise<ExcelJS.Workbook> {
-  const resolvedPath = templatePath.replace(/^~/, process.env.HOME || "");
+export async function loadTemplate(templatePath: string): Promise<ExcelJS.Workbook> {
+  const resolvedPath = templatePath.replace(/^~/, process.env.HOME || '');
 
   if (!fs.existsSync(resolvedPath)) {
     throw new Error(`Template not found: ${resolvedPath}`);
@@ -46,12 +44,7 @@ export async function populateTemplate(
   data: DataTable,
   options: TemplateOptions = {}
 ): Promise<ExcelJS.Workbook> {
-  const {
-    sheet = 0,
-    startRow = 2,
-    hasHeaders = true,
-    autofit = false,
-  } = options;
+  const { sheet = 0, startRow = 2, hasHeaders = true, autofit = false } = options;
 
   if (data.length === 0) {
     return workbook;
@@ -59,7 +52,7 @@ export async function populateTemplate(
 
   // Get target worksheet
   let worksheet: ExcelJS.Worksheet | undefined;
-  if (typeof sheet === "number") {
+  if (typeof sheet === 'number') {
     worksheet = workbook.worksheets[sheet];
   } else {
     worksheet = workbook.getWorksheet(sheet);
@@ -122,7 +115,9 @@ function mapColumnsToHeaders(
   const headerRow = worksheet.getRow(1);
 
   headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-    const headerValue = String(cell.value ?? "").toLowerCase().trim();
+    const headerValue = String(cell.value ?? '')
+      .toLowerCase()
+      .trim();
 
     for (const key of dataKeys) {
       if (key.toLowerCase().trim() === headerValue) {
@@ -165,7 +160,7 @@ export function addSheetWithData(
 /**
  * List named ranges in workbook
  */
-export function listNamedRanges(workbook: ExcelJS.Workbook): string[] {
+export function listNamedRanges(_workbook: ExcelJS.Workbook): string[] {
   // ExcelJS stores defined names
   const names: string[] = [];
 
@@ -179,6 +174,6 @@ export function listNamedRanges(workbook: ExcelJS.Workbook): string[] {
  * Check if file is a template format
  */
 export function isTemplateFile(filename: string): boolean {
-  const ext = filename.toLowerCase().split(".").pop();
-  return ext === "xltx" || ext === "xltm";
+  const ext = filename.toLowerCase().split('.').pop();
+  return ext === 'xltx' || ext === 'xltm';
 }

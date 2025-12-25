@@ -2,8 +2,8 @@
  * Export module for converting worksheet data to various formats
  */
 
-import type ExcelJS from "exceljs";
-import type { DataTable, DataRow } from "./readers.ts";
+import type ExcelJS from 'exceljs';
+import type { DataRow, DataTable } from './readers.ts';
 
 export interface ExportOptions {
   /** Use first row as headers (default: true) */
@@ -20,7 +20,7 @@ export interface ExportOptions {
 
 interface FilterCondition {
   column: string;
-  operator: "=" | "!=" | ">" | "<" | ">=" | "<=";
+  operator: '=' | '!=' | '>' | '<' | '>=' | '<=';
   value: string;
 }
 
@@ -29,7 +29,7 @@ interface FilterCondition {
  */
 function parseFilter(filter: string): FilterCondition {
   // Match operators in order of length (longest first)
-  const operators = ["!=", ">=", "<=", "=", ">", "<"] as const;
+  const operators = ['!=', '>=', '<=', '=', '>', '<'] as const;
 
   for (const op of operators) {
     const index = filter.indexOf(op);
@@ -49,22 +49,22 @@ function parseFilter(filter: string): FilterCondition {
  * Check if a row matches the filter condition
  */
 function matchesFilter(row: DataRow, condition: FilterCondition): boolean {
-  const cellValue = String(row[condition.column] ?? "");
+  const cellValue = String(row[condition.column] ?? '');
   const filterValue = condition.value;
 
   switch (condition.operator) {
-    case "=":
+    case '=':
       return cellValue.toUpperCase() === filterValue.toUpperCase();
-    case "!=":
+    case '!=':
       return cellValue.toUpperCase() !== filterValue.toUpperCase();
-    case ">":
-      return parseFloat(cellValue) > parseFloat(filterValue);
-    case "<":
-      return parseFloat(cellValue) < parseFloat(filterValue);
-    case ">=":
-      return parseFloat(cellValue) >= parseFloat(filterValue);
-    case "<=":
-      return parseFloat(cellValue) <= parseFloat(filterValue);
+    case '>':
+      return Number.parseFloat(cellValue) > Number.parseFloat(filterValue);
+    case '<':
+      return Number.parseFloat(cellValue) < Number.parseFloat(filterValue);
+    case '>=':
+      return Number.parseFloat(cellValue) >= Number.parseFloat(filterValue);
+    case '<=':
+      return Number.parseFloat(cellValue) <= Number.parseFloat(filterValue);
     default:
       return true;
   }
@@ -73,14 +73,11 @@ function matchesFilter(row: DataRow, condition: FilterCondition): boolean {
 /**
  * Export worksheet to JSON array
  */
-export function toJSON(
-  worksheet: ExcelJS.Worksheet,
-  options: ExportOptions = {}
-): DataTable {
+export function toJSON(worksheet: ExcelJS.Worksheet, options: ExportOptions = {}): DataTable {
   const { headers = true, range, skipEmpty = true, filter } = options;
 
   const data: DataTable = [];
-  let headerRow: string[] = [];
+  const headerRow: string[] = [];
 
   // Parse filter if provided
   const filterCondition = filter ? parseFilter(filter) : null;
@@ -110,7 +107,7 @@ export function toJSON(
       const cell = row.getCell(col);
       const value = getCellValue(cell);
 
-      if (value !== null && value !== undefined && value !== "") {
+      if (value !== null && value !== undefined && value !== '') {
         hasData = true;
       }
 
@@ -139,11 +136,8 @@ export function toJSON(
 /**
  * Export worksheet to CSV string
  */
-export function toCSV(
-  worksheet: ExcelJS.Worksheet,
-  options: ExportOptions = {}
-): string {
-  const { headers = true, range, skipEmpty = true, delimiter = ",", filter } = options;
+export function toCSV(worksheet: ExcelJS.Worksheet, options: ExportOptions = {}): string {
+  const { headers = true, range, skipEmpty = true, delimiter = ',', filter } = options;
 
   const lines: string[] = [];
 
@@ -154,7 +148,7 @@ export function toCSV(
   const bounds = range ? parseRange(range) : getWorksheetBounds(worksheet);
 
   // Get header names for filter matching
-  let headerRow: string[] = [];
+  const headerRow: string[] = [];
   if (headers) {
     const firstRow = worksheet.getRow(bounds.startRow);
     for (let col = bounds.startCol; col <= bounds.endCol; col++) {
@@ -178,7 +172,7 @@ export function toCSV(
       const cell = row.getCell(col);
       const value = getCellValue(cell);
 
-      if (value !== null && value !== undefined && value !== "") {
+      if (value !== null && value !== undefined && value !== '') {
         hasData = true;
       }
 
@@ -206,7 +200,7 @@ export function toCSV(
     lines.push(cells.join(delimiter));
   }
 
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 /**
@@ -216,29 +210,27 @@ function getCellValue(cell: ExcelJS.Cell): unknown {
   const value = cell.value;
 
   if (value === null || value === undefined) {
-    return "";
+    return '';
   }
 
   // Handle rich text
-  if (typeof value === "object" && "richText" in value) {
-    return (value as ExcelJS.CellRichTextValue).richText
-      .map((rt) => rt.text)
-      .join("");
+  if (typeof value === 'object' && 'richText' in value) {
+    return (value as ExcelJS.CellRichTextValue).richText.map((rt) => rt.text).join('');
   }
 
   // Handle formula results
-  if (typeof value === "object" && "result" in value) {
+  if (typeof value === 'object' && 'result' in value) {
     return (value as ExcelJS.CellFormulaValue).result;
   }
 
   // Handle hyperlinks
-  if (typeof value === "object" && "hyperlink" in value) {
+  if (typeof value === 'object' && 'hyperlink' in value) {
     return (value as ExcelJS.CellHyperlinkValue).text;
   }
 
   // Handle dates
   if (value instanceof Date) {
-    return value.toISOString().split("T")[0];
+    return value.toISOString().split('T')[0];
   }
 
   return value;
@@ -248,15 +240,10 @@ function getCellValue(cell: ExcelJS.Cell): unknown {
  * Escape value for CSV output
  */
 function escapeCSVValue(value: unknown, delimiter: string): string {
-  const str = String(value ?? "");
+  const str = String(value ?? '');
 
   // Check if escaping is needed
-  if (
-    str.includes(delimiter) ||
-    str.includes('"') ||
-    str.includes("\n") ||
-    str.includes("\r")
-  ) {
+  if (str.includes(delimiter) || str.includes('"') || str.includes('\n') || str.includes('\r')) {
     // Escape quotes and wrap in quotes
     return `"${str.replace(/"/g, '""')}"`;
   }
@@ -282,9 +269,9 @@ function parseRange(range: string): Bounds {
 
   return {
     startCol: columnLetterToNumber(match[1]),
-    startRow: parseInt(match[2], 10),
+    startRow: Number.parseInt(match[2], 10),
     endCol: columnLetterToNumber(match[3]),
-    endRow: parseInt(match[4], 10),
+    endRow: Number.parseInt(match[4], 10),
   };
 }
 
@@ -315,11 +302,12 @@ function columnLetterToNumber(letters: string): number {
  * Convert column number to letter(s)
  */
 export function columnNumberToLetter(num: number): string {
-  let result = "";
-  while (num > 0) {
-    num--;
-    result = String.fromCharCode(65 + (num % 26)) + result;
-    num = Math.floor(num / 26);
+  let result = '';
+  let n = num;
+  while (n > 0) {
+    n--;
+    result = String.fromCharCode(65 + (n % 26)) + result;
+    n = Math.floor(n / 26);
   }
   return result;
 }

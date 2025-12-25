@@ -8,13 +8,174 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { HISTORY_DIR } from './lib/pai-paths';
 
 interface SessionData {
   conversation_id: string;
+  session_id: string;
+  transcript_path: string;
+  cwd: string;
   timestamp: string;
   [key: string]: any;
+}
+
+/**
+ * Export full conversation to markdown
+ */
+function exportConversation(
+  transcriptPath: string,
+  sessionId: string,
+  cwd: string,
+  yearMonth: string
+): { success: boolean; outputPath?: string; messageCount?: number } {
+  try {
+    const lines = readFileSync(transcriptPath, 'utf-8').trim().split('\n');
+    const messages: Array<{ role: string; content: string; timestamp: string }> = [];
+
+    let startTime = '';
+    let endTime = '';
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+
+      try {
+        const entry = JSON.parse(line);
+
+        // Track time range
+        if (entry.timestamp) {
+          if (!startTime) startTime = entry.timestamp;
+          endTime = entry.timestamp;
+        }
+
+        // Process user messages
+        if (entry.type === 'user' && entry.message?.content) {
+          const content = extractContent(entry.message.content);
+          if (content.trim()) {
+            messages.push({
+              role: 'user',
+              content: content.trim(),
+              timestamp: entry.timestamp || '',
+            });
+          }
+        }
+
+        // Process assistant messages
+        if (entry.type === 'assistant' && entry.message?.content) {
+          const content = extractContent(entry.message.content);
+          if (content.trim()) {
+            messages.push({
+              role: 'assistant',
+              content: content.trim(),
+              timestamp: entry.timestamp || '',
+            });
+          }
+        }
+      } catch {}
+    }
+
+    if (messages.length === 0) {
+      return { success: false };
+    }
+
+    // Build markdown
+    const md: string[] = [];
+    md.push('---');
+    md.push(`session_id: ${sessionId}`);
+    md.push(`project: ${cwd}`);
+    md.push(`start_time: ${formatTime(startTime)}`);
+    md.push(`end_time: ${formatTime(endTime)}`);
+    md.push(`message_count: ${messages.length}`);
+    md.push(`export_time: ${new Date().toISOString()}`);
+    md.push('trigger: session_end');
+    md.push('---');
+    md.push('');
+    md.push('# Conversation Export');
+    md.push('');
+    md.push(`**Project:** \`${cwd}\``);
+    md.push(`**Session:** \`${sessionId}\``);
+    md.push(`**Duration:** ${formatTime(startTime)} → ${formatTime(endTime)}`);
+    md.push(`**Messages:** ${messages.length}`);
+    md.push('');
+    md.push('---');
+    md.push('');
+
+    for (const msg of messages) {
+      const roleLabel = msg.role === 'user' ? '## User' : '## Assistant';
+      md.push(roleLabel);
+      if (msg.timestamp) {
+        md.push(`*${formatTime(msg.timestamp)}*`);
+      }
+      md.push('');
+      md.push(msg.content);
+      md.push('');
+      md.push('---');
+      md.push('');
+    }
+
+    // Output directory
+    const outputDir = join(HISTORY_DIR, 'conversations', yearMonth);
+    if (!existsSync(outputDir)) {
+      mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Generate filename
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toISOString().slice(11, 19).replace(/:/g, '');
+    const projectName = cwd
+      ? basename(cwd)
+          .replace(/[^a-zA-Z0-9-_]/g, '-')
+          .toLowerCase()
+      : 'conversation';
+    const shortSession = sessionId.slice(0, 8);
+    const filename = `${dateStr}-${timeStr}_${projectName}_${shortSession}_session-end.md`;
+    const outputPath = join(outputDir, filename);
+
+    writeFileSync(outputPath, md.join('\n'), 'utf-8');
+
+    return { success: true, outputPath, messageCount: messages.length };
+  } catch (_error) {
+    return { success: false };
+  }
+}
+
+/**
+ * Extract text content from message content
+ */
+function extractContent(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        if (typeof block === 'string') return block;
+        if (block?.type === 'text' && block.text) return block.text;
+        return '';
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
+/**
+ * Format timestamp for display
+ */
+function formatTime(timestamp: string): string {
+  if (!timestamp) return '';
+  try {
+    return new Date(timestamp).toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+  } catch {
+    return timestamp;
+  }
 }
 
 async function main() {
@@ -50,6 +211,20 @@ async function main() {
 
     // Write session file
     writeFileSync(join(sessionDir, filename), sessionDoc);
+
+    // Export full conversation if transcript path is available
+    if (data.transcript_path && existsSync(data.transcript_path)) {
+      const exportResult = exportConversation(
+        data.transcript_path,
+        data.session_id,
+        data.cwd,
+        yearMonth
+      );
+      if (exportResult.success) {
+        console.error(`📝 Conversation exported: ${exportResult.outputPath}`);
+        console.error(`💬 Messages saved: ${exportResult.messageCount}`);
+      }
+    }
 
     // Exit successfully
     process.exit(0);

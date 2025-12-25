@@ -26,10 +26,31 @@ import type {
   PerspectiveAnalysisResult,
   PerspectiveConfig,
   PerspectiveValidation,
+  PlatformName,
   PlatformRequirement,
   ResearchPerspective,
 } from './types.ts';
 import { VALID_PLATFORMS } from './types.ts';
+
+/**
+ * Shape of the parsed LLM JSON response for perspectives
+ * Using unknown for values to satisfy strict lint rules - validated in mapping
+ */
+interface ParsedPerspective {
+  text: unknown;
+  domain: unknown;
+  confidence: unknown;
+  recommendedAgent: unknown;
+  rationale: unknown;
+  platforms: unknown;
+}
+
+interface ParsedLLMResponse {
+  perspectives: ParsedPerspective[];
+  overall_complexity: unknown;
+  time_sensitive: unknown;
+  reasoning: unknown;
+}
 
 // Re-export default config
 export { DEFAULT_PERSPECTIVE_CONFIG } from './types.ts';
@@ -238,17 +259,19 @@ export class PerspectiveGenerator {
         }
       }
 
-      const parsed = JSON.parse(responseText);
+      const parsed = JSON.parse(responseText) as ParsedLLMResponse;
 
       // Validate and transform perspectives (now includes platforms - AD-006)
-      const perspectives: EnhancedPerspective[] = parsed.perspectives.map((p: any) => ({
-        text: String(p.text),
-        domain: this.validateDomain(p.domain),
-        confidence: Math.min(100, Math.max(0, Number(p.confidence) || 70)),
-        recommendedAgent: this.validateAgent(p.recommendedAgent),
-        rationale: String(p.rationale || ''),
-        platforms: this.validatePlatforms(p.platforms || []),
-      }));
+      const perspectives: EnhancedPerspective[] = parsed.perspectives.map(
+        (p: ParsedPerspective) => ({
+          text: String(p.text),
+          domain: this.validateDomain(p.domain),
+          confidence: Math.min(100, Math.max(0, Number(p.confidence) || 70)),
+          recommendedAgent: this.validateAgent(p.recommendedAgent),
+          rationale: String(p.rationale || ''),
+          platforms: this.validatePlatforms(p.platforms),
+        })
+      );
 
       return {
         perspectives,
@@ -363,9 +386,18 @@ export class PerspectiveGenerator {
   }
 
   /**
-   * Calculate agent allocation from validated perspectives
+   * Calculate agent allocation from validated perspectives with minimum guarantee
+   *
+   * PREVENTS: Ensemble overrides from eliminating domain-specific agents
+   * GUARANTEES: If original LLM recommended an agent type, at least 1 agent of that type
+   *
+   * @param validations - Validated perspectives (possibly modified by ensemble)
+   * @param originalPerspectives - Original LLM recommendations before validation
    */
-  calculateAgentAllocation(validations: PerspectiveValidation[]): AgentAllocation {
+  calculateAgentAllocation(
+    validations: PerspectiveValidation[],
+    originalPerspectives: ResearchPerspective[]
+  ): AgentAllocation {
     const allocation: AgentAllocation = {
       'perplexity-researcher': 0,
       'claude-researcher': 0,
@@ -373,6 +405,7 @@ export class PerspectiveGenerator {
       'grok-researcher': 0,
     };
 
+    // Calculate allocation from (possibly ensemble-modified) recommendations
     for (const validation of validations) {
       const agent = validation.perspective.recommendedAgent;
       allocation[agent]++;
@@ -380,6 +413,28 @@ export class PerspectiveGenerator {
       // Add backup agent if present
       if (validation.backupAgent && validation.backupAgent !== agent) {
         allocation[validation.backupAgent]++;
+      }
+    }
+
+    // MINIMUM AGENT GUARANTEE
+    // If original LLM recommended an agent type, ensure at least 1 agent of that type
+    // This prevents ensemble from completely eliminating domain-specific agents (e.g., grok for social_media)
+    const originalAgents = new Set(originalPerspectives.map((p) => p.recommendedAgent));
+
+    for (const agent of originalAgents) {
+      if (allocation[agent] === 0) {
+        console.error(`  ⚠️  Ensemble eliminated ${agent}, restoring minimum 1 agent`);
+        allocation[agent] = 1;
+
+        // Rebalance: Reduce the most overrepresented agent to keep total reasonable
+        const entries = Object.entries(allocation) as [AgentType, number][];
+        const maxEntry = entries.reduce((max, entry) => (entry[1] > max[1] ? entry : max));
+        const maxAgent = maxEntry[0];
+
+        if (maxAgent && allocation[maxAgent] > 2) {
+          allocation[maxAgent]--;
+          console.error(`  ⚖️  Reduced ${maxAgent} by 1 to rebalance`);
+        }
       }
     }
 
@@ -414,14 +469,16 @@ export class PerspectiveGenerator {
 
     if (ensembleNeeded.length > 0) {
       console.error(`  🔄 Running ensemble on ${ensembleNeeded.length} uncertain perspectives...`);
-      ensembleNeeded.forEach((v) => ensembleTriggered.push(v.perspective.text));
+      for (const v of ensembleNeeded) {
+        ensembleTriggered.push(v.perspective.text);
+      }
       validations = await this.resolveUncertainPerspectives(validations);
     } else {
       console.error('  ✅ All perspectives validated, no ensemble needed');
     }
 
-    // Step 4: Calculate agent allocation
-    const agentAllocation = this.calculateAgentAllocation(validations);
+    // Step 4: Calculate agent allocation (with minimum guarantee)
+    const agentAllocation = this.calculateAgentAllocation(validations, perspectives);
 
     // Step 5: Calculate overall confidence
     const overallConfidence =
@@ -448,7 +505,7 @@ export class PerspectiveGenerator {
   /**
    * Validation helpers
    */
-  private validateDomain(domain: any): DomainName {
+  private validateDomain(domain: unknown): DomainName {
     const validDomains: DomainName[] = [
       'social_media',
       'academic',
@@ -457,46 +514,52 @@ export class PerspectiveGenerator {
       'security',
       'news',
     ];
-    if (!validDomains.includes(domain)) {
+    if (typeof domain !== 'string' || !validDomains.includes(domain as DomainName)) {
       return 'technical'; // Default fallback
     }
-    return domain;
+    return domain as DomainName;
   }
 
-  private validateAgent(agent: any): AgentType {
+  private validateAgent(agent: unknown): AgentType {
     const validAgents: AgentType[] = [
       'perplexity-researcher',
       'claude-researcher',
       'gemini-researcher',
       'grok-researcher',
     ];
-    if (!validAgents.includes(agent)) {
+    if (typeof agent !== 'string' || !validAgents.includes(agent as AgentType)) {
       return 'perplexity-researcher'; // Default fallback
     }
-    return agent;
+    return agent as AgentType;
   }
 
-  private validateComplexity(complexity: any): ComplexityLevel {
+  private validateComplexity(complexity: unknown): ComplexityLevel {
     const valid: ComplexityLevel[] = ['SIMPLE', 'MODERATE', 'COMPLEX'];
-    if (!valid.includes(complexity)) {
+    if (typeof complexity !== 'string' || !valid.includes(complexity as ComplexityLevel)) {
       return 'MODERATE'; // Default fallback
     }
-    return complexity;
+    return complexity as ComplexityLevel;
   }
 
   /**
    * Validate platforms array (AD-006)
    * Filters to only valid platform names and ensures proper structure
    */
-  private validatePlatforms(platforms: any[]): PlatformRequirement[] {
+  private validatePlatforms(platforms: unknown): PlatformRequirement[] {
     if (!Array.isArray(platforms)) {
       return [];
     }
 
     return platforms
-      .filter((p: any) => p && typeof p.name === 'string')
-      .map((p: any) => ({
-        name: VALID_PLATFORMS.includes(p.name.toLowerCase() as any)
+      .filter(
+        (p: unknown): p is { name: string; reason?: unknown } =>
+          typeof p === 'object' &&
+          p !== null &&
+          'name' in p &&
+          typeof (p as { name: unknown }).name === 'string'
+      )
+      .map((p) => ({
+        name: VALID_PLATFORMS.includes(p.name.toLowerCase() as PlatformName)
           ? p.name.toLowerCase()
           : 'unknown',
         reason: String(p.reason || ''),

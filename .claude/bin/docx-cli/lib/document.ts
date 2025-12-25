@@ -7,27 +7,21 @@
  * document body content with converted markdown.
  */
 
+import * as fs from 'node:fs';
 import {
-  Document,
-  Packer,
-  Paragraph,
-  TextRun,
-  TableOfContents,
-  PageBreak,
-  Header,
-  Footer,
-  ImageRun,
   AlignmentType,
+  Document,
   HeadingLevel,
-  StyleLevel,
-  type IStylesOptions,
-  type ISectionOptions,
   type INumberingOptions,
-} from "docx";
-import * as fs from "fs";
-import PizZip from "pizzip";
-import type { ExtractedTemplate } from "./template.ts";
-import { markdownToDocx, type DocxElement } from "./markdown.ts";
+  Packer,
+  PageBreak,
+  Paragraph,
+  StyleLevel,
+  TableOfContents,
+  TextRun,
+} from 'docx';
+import PizZip from 'pizzip';
+import { markdownToDocx } from './markdown.ts';
 
 export interface DocumentMetadata {
   title?: string;
@@ -59,9 +53,7 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Bu
   const { markdown, templatePath, metadata = {}, basePath } = options;
 
   // Load template as a ZIP archive (docx/dotx are just ZIP files)
-  const templateBuffer = fs.readFileSync(
-    templatePath.replace(/^~/, process.env.HOME || "")
-  );
+  const templateBuffer = fs.readFileSync(templatePath.replace(/^~/, process.env.HOME || ''));
   const zip = new PizZip(templateBuffer);
 
   // Convert markdown to docx XML elements
@@ -93,32 +85,32 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Bu
   const contentZip = new PizZip(contentBuffer);
 
   // Extract the body content from the generated document
-  const generatedDocXml = contentZip.file("word/document.xml")?.asText();
+  const generatedDocXml = contentZip.file('word/document.xml')?.asText();
   if (!generatedDocXml) {
-    throw new Error("Failed to generate document XML");
+    throw new Error('Failed to generate document XML');
   }
 
   // Extract just the <w:body> content from the generated document
   // BUT exclude the sectPr at the end - we want to keep the template's sectPr
   const bodyMatch = generatedDocXml.match(/<w:body[^>]*>([\s\S]*)<\/w:body>/);
   if (!bodyMatch || !bodyMatch[1]) {
-    throw new Error("Failed to extract body content");
+    throw new Error('Failed to extract body content');
   }
   let newBodyContent = bodyMatch[1];
 
   // Remove the generated sectPr - we'll use the template's instead
   // The template's sectPr contains header/footer references
-  newBodyContent = newBodyContent.replace(/<w:sectPr[^>]*>[\s\S]*?<\/w:sectPr>\s*$/, "");
+  newBodyContent = newBodyContent.replace(/<w:sectPr[^>]*>[\s\S]*?<\/w:sectPr>\s*$/, '');
 
   // Get the template's document.xml
-  const templateDocXml = zip.file("word/document.xml")?.asText();
+  const templateDocXml = zip.file('word/document.xml')?.asText();
   if (!templateDocXml) {
-    throw new Error("Template missing document.xml");
+    throw new Error('Template missing document.xml');
   }
 
   // Extract the template's sectPr (contains header/footer references, page settings)
   const templateSectPrMatch = templateDocXml.match(/<w:sectPr[^>]*>[\s\S]*?<\/w:sectPr>/);
-  const templateSectPr = templateSectPrMatch ? templateSectPrMatch[0] : "";
+  const templateSectPr = templateSectPrMatch ? templateSectPrMatch[0] : '';
 
   // Replace the body content in the template while preserving the sectPr
   // This preserves headers, footers, section properties, etc.
@@ -128,7 +120,7 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Bu
   );
 
   // Update the document.xml in the template ZIP
-  zip.file("word/document.xml", modifiedDocXml);
+  zip.file('word/document.xml', modifiedDocXml);
 
   // NOTE: We skip merging numbering.xml because:
   // 1. The template already has comprehensive bullet/numbering definitions
@@ -143,15 +135,12 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Bu
 
   // Apply ID mapping to document.xml (fix hyperlink references)
   if (idMapping.size > 0) {
-    let currentDocXml = zip.file("word/document.xml")?.asText() || "";
+    let currentDocXml = zip.file('word/document.xml')?.asText() || '';
     for (const [oldId, newId] of idMapping) {
       // Replace all occurrences of the old ID with the new ID
-      currentDocXml = currentDocXml.replace(
-        new RegExp(`r:id="${oldId}"`, "g"),
-        `r:id="${newId}"`
-      );
+      currentDocXml = currentDocXml.replace(new RegExp(`r:id="${oldId}"`, 'g'), `r:id="${newId}"`);
     }
-    zip.file("word/document.xml", currentDocXml);
+    zip.file('word/document.xml', currentDocXml);
   }
 
   // Fix duplicate bookmark IDs (docx library bug generates all with id="1")
@@ -161,25 +150,27 @@ export async function createDocument(options: CreateDocumentOptions): Promise<Bu
   // Change content type from template to document
   // .dotx has contentType application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml
   // .docx needs application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml
-  const contentTypesXml = zip.file("[Content_Types].xml")?.asText();
+  const contentTypesXml = zip.file('[Content_Types].xml')?.asText();
   if (contentTypesXml) {
     const updatedContentTypes = contentTypesXml.replace(
       /\.template\.main\+xml/g,
-      ".document.main+xml"
+      '.document.main+xml'
     );
-    zip.file("[Content_Types].xml", updatedContentTypes);
+    zip.file('[Content_Types].xml', updatedContentTypes);
   }
 
   // Generate the final document
-  return Buffer.from(zip.generate({ type: "nodebuffer" }));
+  return Buffer.from(zip.generate({ type: 'nodebuffer' }));
 }
 
 /**
  * Merge numbering.xml from two documents
+ * @internal Reserved for future complex numbering merge scenarios
  */
-function mergeNumberingXml(templateXml: string, generatedXml: string): string {
+function _mergeNumberingXml(templateXml: string, generatedXml: string): string {
   // Extract abstractNum and num elements from generated
-  const abstractNumMatches = generatedXml.match(/<w:abstractNum[^>]*>[\s\S]*?<\/w:abstractNum>/g) || [];
+  const abstractNumMatches =
+    generatedXml.match(/<w:abstractNum[^>]*>[\s\S]*?<\/w:abstractNum>/g) || [];
   const numMatches = generatedXml.match(/<w:num[^>]*>[\s\S]*?<\/w:num>/g) || [];
 
   // Find the highest abstractNumId and numId in template
@@ -188,25 +179,28 @@ function mergeNumberingXml(templateXml: string, generatedXml: string): string {
 
   const templateAbstractIds = templateXml.match(/w:abstractNumId="(\d+)"/g) || [];
   for (const match of templateAbstractIds) {
-    const id = parseInt(match.match(/\d+/)?.[0] || "0");
+    const id = Number.parseInt(match.match(/\d+/)?.[0] || '0');
     if (id > maxAbstractId) maxAbstractId = id;
   }
 
   const templateNumIds = templateXml.match(/w:numId="(\d+)"/g) || [];
   for (const match of templateNumIds) {
-    const id = parseInt(match.match(/\d+/)?.[0] || "0");
+    const id = Number.parseInt(match.match(/\d+/)?.[0] || '0');
     if (id > maxNumId) maxNumId = id;
   }
 
   // Renumber and insert generated numbering
-  let insertAbstractNums = "";
-  let insertNums = "";
+  let insertAbstractNums = '';
+  let insertNums = '';
 
   for (let i = 0; i < abstractNumMatches.length; i++) {
     const abstractNum = abstractNumMatches[i];
     if (abstractNum) {
       const newId = maxAbstractId + i + 1;
-      insertAbstractNums += abstractNum.replace(/w:abstractNumId="(\d+)"/, `w:abstractNumId="${newId}"`);
+      insertAbstractNums += abstractNum.replace(
+        /w:abstractNumId="(\d+)"/,
+        `w:abstractNumId="${newId}"`
+      );
     }
   }
 
@@ -222,23 +216,21 @@ function mergeNumberingXml(templateXml: string, generatedXml: string): string {
   }
 
   // Insert before closing </w:numbering>
-  return templateXml.replace(
-    /<\/w:numbering>/,
-    `${insertAbstractNums}${insertNums}</w:numbering>`
-  );
+  return templateXml.replace(/<\/w:numbering>/, `${insertAbstractNums}${insertNums}</w:numbering>`);
 }
 
 /**
  * Add numbering.xml to content types if missing
+ * @internal Reserved for future complex numbering scenarios
  */
-function addNumberingToContentTypes(zip: PizZip): void {
-  const contentTypesXml = zip.file("[Content_Types].xml")?.asText();
-  if (contentTypesXml && !contentTypesXml.includes("numbering.xml")) {
+function _addNumberingToContentTypes(zip: PizZip): void {
+  const contentTypesXml = zip.file('[Content_Types].xml')?.asText();
+  if (contentTypesXml && !contentTypesXml.includes('numbering.xml')) {
     const updated = contentTypesXml.replace(
       /<\/Types>/,
       `<Override PartName="/word/numbering.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml"/></Types>`
     );
-    zip.file("[Content_Types].xml", updated);
+    zip.file('[Content_Types].xml', updated);
   }
 }
 
@@ -249,8 +241,8 @@ function addNumberingToContentTypes(zip: PizZip): void {
 function mergeRelationships(templateZip: PizZip, contentZip: PizZip): Map<string, string> {
   const idMapping = new Map<string, string>();
 
-  const templateRels = templateZip.file("word/_rels/document.xml.rels")?.asText();
-  const generatedRels = contentZip.file("word/_rels/document.xml.rels")?.asText();
+  const templateRels = templateZip.file('word/_rels/document.xml.rels')?.asText();
+  const generatedRels = contentZip.file('word/_rels/document.xml.rels')?.asText();
 
   if (!templateRels || !generatedRels) return idMapping;
 
@@ -258,22 +250,23 @@ function mergeRelationships(templateZip: PizZip, contentZip: PizZip): Map<string
   let maxRId = 0;
   const rIdMatches = templateRels.match(/Id="rId(\d+)"/g) || [];
   for (const match of rIdMatches) {
-    const id = parseInt(match.match(/\d+/)?.[0] || "0");
+    const id = Number.parseInt(match.match(/\d+/)?.[0] || '0');
     if (id > maxRId) maxRId = id;
   }
 
   // Extract hyperlink relationships from generated document
   // The docx library generates random IDs like "rId-abc123xyz"
-  const hyperlinkRels = generatedRels.match(/<Relationship[^>]*Type="[^"]*hyperlink"[^>]*\/>/g) || [];
+  const hyperlinkRels =
+    generatedRels.match(/<Relationship[^>]*Type="[^"]*hyperlink"[^>]*\/>/g) || [];
 
   if (hyperlinkRels.length > 0) {
-    let insertRels = "";
+    let insertRels = '';
     for (let i = 0; i < hyperlinkRels.length; i++) {
       const rel = hyperlinkRels[i];
       if (rel) {
         // Extract the old ID (could be any format like rId-abc123 or rId5)
         const oldIdMatch = rel.match(/Id="([^"]+)"/);
-        const oldId = oldIdMatch?.[1] || "";
+        const oldId = oldIdMatch?.[1] || '';
 
         const newId = `rId${maxRId + i + 1}`;
 
@@ -288,11 +281,8 @@ function mergeRelationships(templateZip: PizZip, contentZip: PizZip): Map<string
     }
 
     // Insert before closing </Relationships>
-    const updatedRels = templateRels.replace(
-      /<\/Relationships>/,
-      `${insertRels}</Relationships>`
-    );
-    templateZip.file("word/_rels/document.xml.rels", updatedRels);
+    const updatedRels = templateRels.replace(/<\/Relationships>/, `${insertRels}</Relationships>`);
+    templateZip.file('word/_rels/document.xml.rels', updatedRels);
   }
 
   return idMapping;
@@ -304,7 +294,7 @@ function mergeRelationships(templateZip: PizZip, contentZip: PizZip): Map<string
  * OOXML requires unique IDs to pair bookmarkStart with bookmarkEnd
  */
 function fixBookmarkIds(zip: PizZip): void {
-  let docXml = zip.file("word/document.xml")?.asText();
+  let docXml = zip.file('word/document.xml')?.asText();
   if (!docXml) return;
 
   // Find all bookmark names and assign unique IDs
@@ -333,11 +323,11 @@ function fixBookmarkIds(zip: PizZip): void {
   for (const [name, id] of bookmarkNames) {
     // Handle both attribute orders
     docXml = docXml.replace(
-      new RegExp(`<w:bookmarkStart\\s+w:name="${name}"\\s+w:id="\\d+"/>`, "g"),
+      new RegExp(`<w:bookmarkStart\\s+w:name="${name}"\\s+w:id="\\d+"/>`, 'g'),
       `<w:bookmarkStart w:name="${name}" w:id="${id}"/>`
     );
     docXml = docXml.replace(
-      new RegExp(`<w:bookmarkStart\\s+w:id="\\d+"\\s+w:name="${name}"/>`, "g"),
+      new RegExp(`<w:bookmarkStart\\s+w:id="\\d+"\\s+w:name="${name}"/>`, 'g'),
       `<w:bookmarkStart w:id="${id}" w:name="${name}"/>`
     );
   }
@@ -348,7 +338,7 @@ function fixBookmarkIds(zip: PizZip): void {
 
   // Split by bookmarkStart to process each section
   const parts = docXml.split(/(<w:bookmarkStart[^>]+\/>)/);
-  let result = "";
+  let result = '';
   let lastBookmarkId = 1;
 
   for (let i = 0; i < parts.length; i++) {
@@ -357,13 +347,15 @@ function fixBookmarkIds(zip: PizZip): void {
 
     // Check if this part is a bookmarkStart
     const startMatch = part.match(/<w:bookmarkStart[^>]+w:name="([^"]+)"[^>]+w:id="(\d+)"[^>]*\/>/);
-    const startMatchAlt = part.match(/<w:bookmarkStart[^>]+w:id="(\d+)"[^>]+w:name="([^"]+)"[^>]*\/>/);
+    const startMatchAlt = part.match(
+      /<w:bookmarkStart[^>]+w:id="(\d+)"[^>]+w:name="([^"]+)"[^>]*\/>/
+    );
 
     if (startMatch) {
-      lastBookmarkId = parseInt(startMatch[2] || "1");
+      lastBookmarkId = Number.parseInt(startMatch[2] || '1');
       result += part;
     } else if (startMatchAlt) {
-      lastBookmarkId = parseInt(startMatchAlt[1] || "1");
+      lastBookmarkId = Number.parseInt(startMatchAlt[1] || '1');
       result += part;
     } else {
       // Replace bookmarkEnd with the correct ID from the preceding bookmarkStart
@@ -379,7 +371,7 @@ function fixBookmarkIds(zip: PizZip): void {
     }
   }
 
-  zip.file("word/document.xml", result);
+  zip.file('word/document.xml', result);
 }
 
 /**
@@ -410,7 +402,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
             text: metadata.title,
             bold: true,
             size: 56, // 28pt
-            color: "FF6600", // Orbit orange
+            color: 'FF6600', // Orbit orange
           }),
         ],
       })
@@ -428,7 +420,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
           new TextRun({
             text: metadata.subtitle,
             size: 36, // 18pt
-            color: "444444",
+            color: '444444',
           }),
         ],
       })
@@ -442,7 +434,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
         alignment: AlignmentType.CENTER,
         spacing: { before: 200, after: 60 },
         children: [
-          new TextRun({ text: "Author: ", size: 24 }),
+          new TextRun({ text: 'Author: ', size: 24 }),
           new TextRun({ text: metadata.author, size: 24 }),
         ],
       })
@@ -455,7 +447,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
         alignment: AlignmentType.CENTER,
         spacing: { after: 60 },
         children: [
-          new TextRun({ text: "Date: ", size: 24 }),
+          new TextRun({ text: 'Date: ', size: 24 }),
           new TextRun({ text: metadata.date, size: 24 }),
         ],
       })
@@ -468,7 +460,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
         alignment: AlignmentType.CENTER,
         spacing: { after: 60 },
         children: [
-          new TextRun({ text: "Version: ", size: 24 }),
+          new TextRun({ text: 'Version: ', size: 24 }),
           new TextRun({ text: metadata.version, size: 24 }),
         ],
       })
@@ -486,7 +478,7 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
             text: metadata.confidentiality.toUpperCase(),
             bold: true,
             size: 24,
-            color: "CC0000",
+            color: 'CC0000',
           }),
         ],
       })
@@ -500,13 +492,13 @@ function buildCoverPage(metadata: DocumentMetadata): Paragraph[] {
  * Build Table of Contents
  */
 function buildTableOfContents(): TableOfContents {
-  return new TableOfContents("Table of Contents", {
+  return new TableOfContents('Table of Contents', {
     hyperlink: true,
-    headingStyleRange: "1-3",
+    headingStyleRange: '1-3',
     stylesWithLevels: [
-      new StyleLevel("Heading1", 1),
-      new StyleLevel("Heading2", 2),
-      new StyleLevel("Heading3", 3),
+      new StyleLevel('Heading1', 1),
+      new StyleLevel('Heading2', 2),
+      new StyleLevel('Heading3', 3),
     ],
   });
 }
@@ -518,12 +510,12 @@ function buildNumberingConfig(): INumberingOptions {
   return {
     config: [
       {
-        reference: "default-numbering",
+        reference: 'default-numbering',
         levels: [
           {
             level: 0,
-            format: "decimal",
-            text: "%1.",
+            format: 'decimal',
+            text: '%1.',
             alignment: AlignmentType.START,
             style: {
               paragraph: {
@@ -533,8 +525,8 @@ function buildNumberingConfig(): INumberingOptions {
           },
           {
             level: 1,
-            format: "lowerLetter",
-            text: "%2.",
+            format: 'lowerLetter',
+            text: '%2.',
             alignment: AlignmentType.START,
             style: {
               paragraph: {
@@ -544,8 +536,8 @@ function buildNumberingConfig(): INumberingOptions {
           },
           {
             level: 2,
-            format: "lowerRoman",
-            text: "%3.",
+            format: 'lowerRoman',
+            text: '%3.',
             alignment: AlignmentType.START,
             style: {
               paragraph: {
@@ -563,7 +555,7 @@ function buildNumberingConfig(): INumberingOptions {
  * Save document to file
  */
 export async function saveDocument(buffer: Buffer, outputPath: string): Promise<void> {
-  const resolvedPath = outputPath.replace(/^~/, process.env.HOME || "");
+  const resolvedPath = outputPath.replace(/^~/, process.env.HOME || '');
   fs.writeFileSync(resolvedPath, buffer);
 }
 
@@ -582,28 +574,28 @@ export async function createSimpleDocument(
     styles: {
       paragraphStyles: [
         {
-          id: "Quote",
-          name: "Quote",
-          basedOn: "Normal",
-          next: "Normal",
+          id: 'Quote',
+          name: 'Quote',
+          basedOn: 'Normal',
+          next: 'Normal',
           run: {
             italics: true,
-            color: "666666",
+            color: '666666',
           },
           paragraph: {
             indent: { left: 720 },
           },
         },
         {
-          id: "Code",
-          name: "Code",
-          basedOn: "Normal",
+          id: 'Code',
+          name: 'Code',
+          basedOn: 'Normal',
           run: {
-            font: "Consolas",
+            font: 'Consolas',
             size: 20,
           },
           paragraph: {
-            shading: { fill: "F5F5F5" },
+            shading: { fill: 'F5F5F5' },
           },
         },
       ],
@@ -629,5 +621,5 @@ export async function createSimpleDocument(
   const zip = new PizZip(buffer);
   fixBookmarkIds(zip);
 
-  return Buffer.from(zip.generate({ type: "nodebuffer" }));
+  return Buffer.from(zip.generate({ type: 'nodebuffer' }));
 }

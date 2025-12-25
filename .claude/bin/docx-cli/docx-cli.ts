@@ -8,20 +8,25 @@
  *   docx-cli styles <template.dotx>
  */
 
-import { Command } from "commander";
-import * as fs from "fs";
-import * as path from "path";
-import { loadTemplate, listStyles } from "./lib/template.ts";
-import { createDocument, createSimpleDocument, saveDocument, type DocumentMetadata } from "./lib/document.ts";
-import { appendToDocument } from "./lib/edit.ts";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { Command } from 'commander';
+import {
+  type DocumentMetadata,
+  createDocument,
+  createSimpleDocument,
+  saveDocument,
+} from './lib/document.ts';
+import { appendToDocument } from './lib/edit.ts';
+import { listStyles, loadTemplate } from './lib/template.ts';
 
 const program = new Command();
 
 // Default template path (fallback if not configured)
-const DEFAULT_TEMPLATE = "~/orbit_doc_template.dotx";
+const DEFAULT_TEMPLATE = '~/orbit_doc_template.dotx';
 
 // Configuration from ~/.claude/settings.json
-const CLAUDE_SETTINGS_PATH = "~/.claude/settings.json";
+const CLAUDE_SETTINGS_PATH = '~/.claude/settings.json';
 
 interface DocxCliConfig {
   template?: string;
@@ -36,12 +41,12 @@ interface ClaudeSettings {
  * Load docx-cli configuration from ~/.claude/settings.json
  */
 function loadConfig(): DocxCliConfig {
-  const home = process.env.HOME || "";
+  const home = process.env.HOME || '';
   const settingsPath = CLAUDE_SETTINGS_PATH.replace(/^~/, home);
 
   if (fs.existsSync(settingsPath)) {
     try {
-      const settings: ClaudeSettings = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      const settings: ClaudeSettings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
       return settings.docxCli || {};
     } catch {
       return {};
@@ -62,7 +67,7 @@ function resolveTemplatePath(templateArg?: string): string {
   let templatePath = templateArg || config.template || DEFAULT_TEMPLATE;
 
   // Resolve ~ to home directory
-  templatePath = templatePath.replace(/^~/, process.env.HOME || "");
+  templatePath = templatePath.replace(/^~/, process.env.HOME || '');
 
   if (!fs.existsSync(templatePath)) {
     console.error(`Template not found: ${templatePath}`);
@@ -76,22 +81,22 @@ function resolveTemplatePath(templateArg?: string): string {
  * Read input from file or stdin
  */
 async function readInput(inputPath: string): Promise<string> {
-  if (inputPath === "-") {
+  if (inputPath === '-') {
     // Read from stdin
     const chunks: Buffer[] = [];
     for await (const chunk of Bun.stdin.stream()) {
       chunks.push(Buffer.from(chunk));
     }
-    return Buffer.concat(chunks).toString("utf-8");
+    return Buffer.concat(chunks).toString('utf-8');
   }
 
-  const resolvedPath = inputPath.replace(/^~/, process.env.HOME || "");
+  const resolvedPath = inputPath.replace(/^~/, process.env.HOME || '');
   if (!fs.existsSync(resolvedPath)) {
     console.error(`File not found: ${resolvedPath}`);
     process.exit(1);
   }
 
-  return fs.readFileSync(resolvedPath, "utf-8");
+  return fs.readFileSync(resolvedPath, 'utf-8');
 }
 
 /**
@@ -100,14 +105,14 @@ async function readInput(inputPath: string): Promise<string> {
 function loadMetadata(metaPath?: string): DocumentMetadata {
   if (!metaPath) return {};
 
-  const resolvedPath = metaPath.replace(/^~/, process.env.HOME || "");
+  const resolvedPath = metaPath.replace(/^~/, process.env.HOME || '');
   if (!fs.existsSync(resolvedPath)) {
     console.error(`Metadata file not found: ${resolvedPath}`);
     process.exit(1);
   }
 
   try {
-    return JSON.parse(fs.readFileSync(resolvedPath, "utf-8"));
+    return JSON.parse(fs.readFileSync(resolvedPath, 'utf-8'));
   } catch (error) {
     console.error(`Failed to parse metadata file: ${error}`);
     process.exit(1);
@@ -116,24 +121,24 @@ function loadMetadata(metaPath?: string): DocumentMetadata {
 
 // Program configuration
 program
-  .name("docx-cli")
-  .description("Convert Markdown to Word documents using company templates")
-  .version("1.0.0");
+  .name('docx-cli')
+  .description('Convert Markdown to Word documents using company templates')
+  .version('1.0.0');
 
 // Create command
 program
-  .command("create <input>")
-  .description("Create a Word document from Markdown")
-  .option("-o, --output <path>", "Output file path", "output.docx")
-  .option("-t, --template <path>", "Template file (.dotx)")
-  .option("-m, --meta <path>", "JSON metadata file for cover page")
-  .option("--title <title>", "Document title")
-  .option("--subtitle <subtitle>", "Document subtitle")
-  .option("--author <author>", "Document author")
-  .option("--date <date>", "Document date")
-  .option("--doc-version <version>", "Document version")
-  .option("--confidentiality <level>", "Confidentiality level")
-  .option("--no-template", "Create without template styling")
+  .command('create <input>')
+  .description('Create a Word document from Markdown')
+  .option('-o, --output <path>', 'Output file path', 'output.docx')
+  .option('-t, --template <path>', 'Template file (.dotx)')
+  .option('-m, --meta <path>', 'JSON metadata file for cover page')
+  .option('--title <title>', 'Document title')
+  .option('--subtitle <subtitle>', 'Document subtitle')
+  .option('--author <author>', 'Document author')
+  .option('--date <date>', 'Document date')
+  .option('--doc-version <version>', 'Document version')
+  .option('--confidentiality <level>', 'Confidentiality level')
+  .option('--no-template', 'Create without template styling')
   .action(async (input: string, options) => {
     try {
       // Read markdown input
@@ -151,13 +156,13 @@ program
       };
 
       // Determine base path for image resolution
-      const basePath = input === "-" ? process.cwd() : path.dirname(path.resolve(input));
+      const basePath = input === '-' ? process.cwd() : path.dirname(path.resolve(input));
 
       let buffer: Buffer;
 
       if (options.template === false) {
         // Create without template
-        console.error("Creating document without template...");
+        console.error('Creating document without template...');
         buffer = await createSimpleDocument(markdown, metadata);
       } else {
         // Create with template
@@ -173,7 +178,7 @@ program
       }
 
       // Save output
-      const outputPath = options.output.replace(/^~/, process.env.HOME || "");
+      const outputPath = options.output.replace(/^~/, process.env.HOME || '');
       await saveDocument(buffer, outputPath);
 
       console.error(`Created: ${outputPath}`);
@@ -185,13 +190,13 @@ program
 
 // Edit command
 program
-  .command("edit <document>")
-  .description("Edit an existing Word document")
-  .option("-a, --append <markdown>", "Append markdown content")
-  .option("-o, --output <path>", "Output file path (default: overwrite input)")
+  .command('edit <document>')
+  .description('Edit an existing Word document')
+  .option('-a, --append <markdown>', 'Append markdown content')
+  .option('-o, --output <path>', 'Output file path (default: overwrite input)')
   .action(async (document: string, options) => {
     try {
-      const docPath = document.replace(/^~/, process.env.HOME || "");
+      const docPath = document.replace(/^~/, process.env.HOME || '');
 
       if (!fs.existsSync(docPath)) {
         console.error(`Document not found: ${docPath}`);
@@ -199,19 +204,20 @@ program
       }
 
       if (!options.append) {
-        console.error("No edit operation specified. Use --append <markdown-file>");
+        console.error('No edit operation specified. Use --append <markdown-file>');
         process.exit(1);
       }
 
       // Read markdown to append
       const markdown = await readInput(options.append);
-      const basePath = options.append === "-" ? process.cwd() : path.dirname(path.resolve(options.append));
+      const basePath =
+        options.append === '-' ? process.cwd() : path.dirname(path.resolve(options.append));
 
       // Append to document
       const buffer = await appendToDocument(docPath, markdown, { basePath });
 
       // Save output
-      const outputPath = (options.output || document).replace(/^~/, process.env.HOME || "");
+      const outputPath = (options.output || document).replace(/^~/, process.env.HOME || '');
       await saveDocument(buffer, outputPath);
 
       console.error(`Updated: ${outputPath}`);
@@ -223,11 +229,11 @@ program
 
 // Styles command
 program
-  .command("styles <template>")
-  .description("List available styles in a template")
+  .command('styles <template>')
+  .description('List available styles in a template')
   .action(async (template: string) => {
     try {
-      const templatePath = template.replace(/^~/, process.env.HOME || "");
+      const templatePath = template.replace(/^~/, process.env.HOME || '');
 
       if (!fs.existsSync(templatePath)) {
         console.error(`Template not found: ${templatePath}`);
@@ -243,15 +249,17 @@ program
   });
 
 // Help command with examples
-program.on("--help", () => {
-  console.log("");
-  console.log("Examples:");
-  console.log("  $ docx-cli create report.md -o report.docx");
-  console.log("  $ docx-cli create report.md -o report.docx --title \"Q4 Report\" --author \"John Doe\"");
-  console.log("  $ docx-cli create report.md -o report.docx --meta metadata.json");
-  console.log("  $ echo \"# Hello World\" | docx-cli create - -o hello.docx");
-  console.log("  $ docx-cli edit existing.docx --append additions.md");
-  console.log("  $ docx-cli styles ~/orbit_doc_template.dotx");
+program.on('--help', () => {
+  console.log('');
+  console.log('Examples:');
+  console.log('  $ docx-cli create report.md -o report.docx');
+  console.log(
+    '  $ docx-cli create report.md -o report.docx --title "Q4 Report" --author "John Doe"'
+  );
+  console.log('  $ docx-cli create report.md -o report.docx --meta metadata.json');
+  console.log('  $ echo "# Hello World" | docx-cli create - -o hello.docx');
+  console.log('  $ docx-cli edit existing.docx --append additions.md');
+  console.log('  $ docx-cli styles ~/orbit_doc_template.dotx');
 });
 
 // Parse and run

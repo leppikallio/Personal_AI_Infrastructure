@@ -3,27 +3,26 @@
  * Converts parsed markdown tokens to docx elements
  */
 
-import { marked, type Token, type Tokens } from "marked";
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
-  Paragraph,
-  TextRun,
-  ImageRun,
-  ExternalHyperlink,
-  InternalHyperlink,
-  Bookmark,
-  Table,
-  TableRow,
-  TableCell,
-  WidthType,
-  BorderStyle,
   AlignmentType,
+  Bookmark,
+  BorderStyle,
+  ExternalHyperlink,
   HeadingLevel,
   type IParagraphOptions,
-  type IRunOptions,
-} from "docx";
-import * as fs from "fs";
-import * as path from "path";
-import type { ExtractedTemplate } from "./template.ts";
+  ImageRun,
+  InternalHyperlink,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from 'docx';
+import { type Token, type Tokens, marked } from 'marked';
+import type { ExtractedTemplate } from './template.ts';
 
 export interface ConversionOptions {
   /** Base path for resolving relative image paths */
@@ -78,31 +77,31 @@ async function convertToken(
   options: ConversionOptions
 ): Promise<DocxElement | DocxElement[] | null> {
   switch (token.type) {
-    case "heading":
+    case 'heading':
       return convertHeading(token as Tokens.Heading, options);
 
-    case "paragraph":
+    case 'paragraph':
       return convertParagraph(token as Tokens.Paragraph, options);
 
-    case "list":
+    case 'list':
       return convertList(token as Tokens.List, options);
 
-    case "blockquote":
+    case 'blockquote':
       return convertBlockquote(token as Tokens.Blockquote, options);
 
-    case "code":
+    case 'code':
       return convertCodeBlock(token as Tokens.Code);
 
-    case "table":
+    case 'table':
       return convertTable(token as Tokens.Table, options);
 
-    case "hr":
+    case 'hr':
       return convertHorizontalRule();
 
-    case "space":
+    case 'space':
       return null; // Skip empty space tokens
 
-    case "html":
+    case 'html':
       // Skip raw HTML - could add handling later
       return null;
 
@@ -117,10 +116,7 @@ async function convertToken(
  * Professional pagination: Headings always keep with next paragraph
  * Alignment: Left-align headings (not justified)
  */
-function convertHeading(
-  token: Tokens.Heading,
-  options: ConversionOptions
-): Paragraph {
+function convertHeading(token: Tokens.Heading, options: ConversionOptions): Paragraph {
   const level = Math.min(token.depth, 6) as 1 | 2 | 3 | 4 | 5 | 6;
 
   // Map level to HeadingLevel enum
@@ -155,14 +151,16 @@ function convertHeading(
       // Add bookmark that wraps the heading content
       new Bookmark({
         id: slug,
-        children: headingChildren.map((child) => {
-          // Bookmarks only accept TextRun children, not hyperlinks
-          if (child instanceof TextRun) {
-            return child;
-          }
-          // For non-TextRun items, extract text representation
-          return new TextRun({ text: "" });
-        }).filter((c): c is TextRun => c instanceof TextRun),
+        children: headingChildren
+          .map((child) => {
+            // Bookmarks only accept TextRun children, not hyperlinks
+            if (child instanceof TextRun) {
+              return child;
+            }
+            // For non-TextRun items, extract text representation
+            return new TextRun({ text: '' });
+          })
+          .filter((c): c is TextRun => c instanceof TextRun),
       }),
     ],
   };
@@ -176,9 +174,9 @@ function convertHeading(
 function generateSlug(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "") // Remove non-word chars except spaces and hyphens
-    .replace(/\s+/g, "-") // Replace spaces with hyphens
-    .replace(/-+/g, "-") // Collapse multiple hyphens
+    .replace(/[^\w\s-]/g, '') // Remove non-word chars except spaces and hyphens
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Collapse multiple hyphens
     .trim();
 }
 
@@ -192,7 +190,7 @@ function convertParagraph(
   options: ConversionOptions
 ): Paragraph | Paragraph[] {
   // Check for image-only paragraphs
-  if (token.tokens?.length === 1 && token.tokens[0]?.type === "image") {
+  if (token.tokens?.length === 1 && token.tokens[0]?.type === 'image') {
     const imageToken = token.tokens[0] as Tokens.Image;
     const imageRun = createImageRun(imageToken, options);
     if (imageRun) {
@@ -217,10 +215,7 @@ function convertParagraph(
 /**
  * Convert list to array of Paragraph elements with bullet/number styling
  */
-function convertList(
-  token: Tokens.List,
-  options: ConversionOptions
-): Paragraph[] {
+function convertList(token: Tokens.List, options: ConversionOptions): Paragraph[] {
   const paragraphs: Paragraph[] = [];
   const isOrdered = token.ordered;
 
@@ -241,17 +236,17 @@ function convertList(
 function convertListItem(
   item: Tokens.ListItem,
   isOrdered: boolean,
-  index: number,
+  _index: number,
   options: ConversionOptions
 ): Paragraph[] {
   const paragraphs: Paragraph[] = [];
 
   // List item tokens typically contain 'text' or 'paragraph' tokens
   // We need to extract the actual inline content
-  let inlineTokens: Token[] = [];
+  const inlineTokens: Token[] = [];
 
   for (const token of item.tokens || []) {
-    if (token.type === "text") {
+    if (token.type === 'text') {
       // For text tokens, the inline tokens are in token.tokens
       const textToken = token as Tokens.Text & { tokens?: Token[] };
       if (textToken.tokens) {
@@ -259,7 +254,7 @@ function convertListItem(
       } else {
         inlineTokens.push(token);
       }
-    } else if (token.type === "paragraph") {
+    } else if (token.type === 'paragraph') {
       // For paragraph tokens, extract its inline tokens
       inlineTokens.push(...((token as Tokens.Paragraph).tokens || []));
     } else {
@@ -272,7 +267,7 @@ function convertListItem(
   // PAGINATION: List items should stay together with their content
   const firstPara = new Paragraph({
     bullet: isOrdered ? undefined : { level: 0 },
-    numbering: isOrdered ? { reference: "default-numbering", level: 0 } : undefined,
+    numbering: isOrdered ? { reference: 'default-numbering', level: 0 } : undefined,
     // ALIGNMENT: Left-align list items
     alignment: AlignmentType.LEFT,
     widowControl: true,
@@ -288,27 +283,21 @@ function convertListItem(
  * Professional pagination: Keep quotes together
  * Alignment: Left-align quotes
  */
-function convertBlockquote(
-  token: Tokens.Blockquote,
-  options: ConversionOptions
-): Paragraph[] {
+function convertBlockquote(token: Tokens.Blockquote, options: ConversionOptions): Paragraph[] {
   const paragraphs: Paragraph[] = [];
 
   for (const innerToken of token.tokens || []) {
-    if (innerToken.type === "paragraph") {
+    if (innerToken.type === 'paragraph') {
       paragraphs.push(
         new Paragraph({
-          style: "Quote",
+          style: 'Quote',
           indent: { left: 720 }, // 0.5 inch indent
           // ALIGNMENT: Left-align quotes
           alignment: AlignmentType.LEFT,
           // PAGINATION: Quotes should stay together
           keepLines: true,
           widowControl: true,
-          children: convertInlineTokens(
-            (innerToken as Tokens.Paragraph).tokens || [],
-            options
-          ),
+          children: convertInlineTokens((innerToken as Tokens.Paragraph).tokens || [], options),
         })
       );
     }
@@ -324,8 +313,8 @@ function convertBlockquote(
  */
 function convertCodeBlock(token: Tokens.Code): Paragraph {
   return new Paragraph({
-    style: "Code",
-    shading: { fill: "F5F5F5" },
+    style: 'Code',
+    shading: { fill: 'F5F5F5' },
     // ALIGNMENT: Left-align code blocks
     alignment: AlignmentType.LEFT,
     // PAGINATION: Code blocks should not be split across pages
@@ -334,7 +323,7 @@ function convertCodeBlock(token: Tokens.Code): Paragraph {
     children: [
       new TextRun({
         text: token.text,
-        font: "Consolas",
+        font: 'Consolas',
         size: 20, // 10pt
       }),
     ],
@@ -346,10 +335,7 @@ function convertCodeBlock(token: Tokens.Code): Paragraph {
  * Professional pagination: Rows don't split across pages, headers repeat
  * Alignment: Left-align table cell content
  */
-function convertTable(
-  token: Tokens.Table,
-  options: ConversionOptions
-): Table {
+function convertTable(token: Tokens.Table, options: ConversionOptions): Table {
   const rows: TableRow[] = [];
 
   // Header row
@@ -364,7 +350,7 @@ function convertTable(
               children: convertInlineTokens(cell.tokens || [], options),
             }),
           ],
-          shading: { fill: "E0E0E0" },
+          shading: { fill: 'E0E0E0' },
         })
     );
     // PAGINATION: Header row repeats on each page and can't split
@@ -422,10 +408,7 @@ type InlineElement = TextRun | ImageRun | ExternalHyperlink | InternalHyperlink 
 /**
  * Convert inline tokens to TextRun/ImageRun array
  */
-function convertInlineTokens(
-  tokens: Token[],
-  options: ConversionOptions
-): InlineElement[] {
+function convertInlineTokens(tokens: Token[], options: ConversionOptions): InlineElement[] {
   const runs: InlineElement[] = [];
 
   for (const token of tokens) {
@@ -453,38 +436,46 @@ function convertStyledTokens(
   const runs: TextRun[] = [];
 
   for (const token of tokens) {
-    if (token.type === "text") {
+    if (token.type === 'text') {
       runs.push(
         new TextRun({
           text: (token as Tokens.Text).text,
           ...style,
         })
       );
-    } else if (token.type === "strong") {
+    } else if (token.type === 'strong') {
       // Nested bold inside italic or vice versa
       runs.push(
-        ...convertStyledTokens((token as Tokens.Strong).tokens || [], { ...style, bold: true }, options)
+        ...convertStyledTokens(
+          (token as Tokens.Strong).tokens || [],
+          { ...style, bold: true },
+          options
+        )
       );
-    } else if (token.type === "em") {
+    } else if (token.type === 'em') {
       runs.push(
-        ...convertStyledTokens((token as Tokens.Em).tokens || [], { ...style, italics: true }, options)
+        ...convertStyledTokens(
+          (token as Tokens.Em).tokens || [],
+          { ...style, italics: true },
+          options
+        )
       );
-    } else if (token.type === "codespan") {
+    } else if (token.type === 'codespan') {
       runs.push(
         new TextRun({
           text: (token as Tokens.Codespan).text,
-          font: "Consolas",
+          font: 'Consolas',
           ...style,
         })
       );
-    } else if ("text" in token && typeof token.text === "string") {
+    } else if ('text' in token && typeof token.text === 'string') {
       runs.push(
         new TextRun({
           text: token.text,
           ...style,
         })
       );
-    } else if ("raw" in token && typeof token.raw === "string") {
+    } else if ('raw' in token && typeof token.raw === 'string') {
       runs.push(
         new TextRun({
           text: token.raw,
@@ -505,30 +496,30 @@ function convertInlineToken(
   options: ConversionOptions
 ): InlineElement | InlineElement[] | null {
   switch (token.type) {
-    case "text":
+    case 'text':
       return new TextRun({ text: (token as Tokens.Text).text });
 
-    case "strong":
+    case 'strong':
       // Recursively convert inner tokens and apply bold styling
       return convertStyledTokens((token as Tokens.Strong).tokens || [], { bold: true }, options);
 
-    case "em":
+    case 'em':
       // Recursively convert inner tokens and apply italic styling
       return convertStyledTokens((token as Tokens.Em).tokens || [], { italics: true }, options);
 
-    case "codespan":
+    case 'codespan':
       return new TextRun({
         text: (token as Tokens.Codespan).text,
-        font: "Consolas",
-        shading: { fill: "F5F5F5" },
+        font: 'Consolas',
+        shading: { fill: 'F5F5F5' },
       });
 
-    case "link": {
+    case 'link': {
       const linkToken = token as Tokens.Link;
       const href = linkToken.href;
 
       // Check if this is an internal link (starts with #)
-      if (href.startsWith("#")) {
+      if (href.startsWith('#')) {
         // Internal bookmark link
         const anchor = href.slice(1); // Remove the #
         return new InternalHyperlink({
@@ -536,36 +527,35 @@ function convertInlineToken(
           children: [
             new TextRun({
               text: linkToken.text,
-              style: "Hyperlink",
-            }),
-          ],
-        });
-      } else {
-        // External link
-        return new ExternalHyperlink({
-          link: href,
-          children: [
-            new TextRun({
-              text: linkToken.text,
-              style: "Hyperlink",
+              style: 'Hyperlink',
             }),
           ],
         });
       }
+      // External link
+      return new ExternalHyperlink({
+        link: href,
+        children: [
+          new TextRun({
+            text: linkToken.text,
+            style: 'Hyperlink',
+          }),
+        ],
+      });
     }
 
-    case "image":
+    case 'image':
       return createImageRun(token as Tokens.Image, options);
 
-    case "br":
+    case 'br':
       return new TextRun({ break: 1 });
 
-    case "escape":
+    case 'escape':
       return new TextRun({ text: (token as Tokens.Escape).text });
 
     default:
       // For unrecognized tokens with raw text
-      if ("raw" in token && typeof token.raw === "string") {
+      if ('raw' in token && typeof token.raw === 'string') {
         return new TextRun({ text: token.raw });
       }
       return null;
@@ -575,27 +565,24 @@ function convertInlineToken(
 /**
  * Create ImageRun from image token
  */
-function createImageRun(
-  token: Tokens.Image,
-  options: ConversionOptions
-): ImageRun | null {
+function createImageRun(token: Tokens.Image, options: ConversionOptions): ImageRun | null {
   const { basePath = process.cwd(), maxImageWidth = 5486400 } = options;
 
   let imagePath = token.href;
 
   // Handle relative paths
-  if (!path.isAbsolute(imagePath) && !imagePath.startsWith("http")) {
+  if (!path.isAbsolute(imagePath) && !imagePath.startsWith('http')) {
     imagePath = path.resolve(basePath, imagePath);
   }
 
   // Handle URLs - skip for now (would need fetch)
-  if (imagePath.startsWith("http")) {
+  if (imagePath.startsWith('http')) {
     console.warn(`Skipping remote image: ${imagePath}`);
     return null;
   }
 
   // Resolve ~ to home directory
-  imagePath = imagePath.replace(/^~/, process.env.HOME || "");
+  imagePath = imagePath.replace(/^~/, process.env.HOME || '');
 
   if (!fs.existsSync(imagePath)) {
     console.warn(`Image not found: ${imagePath}`);
@@ -679,14 +666,14 @@ function getImageDimensions(imagePath: string): { width: number; height: number 
 /**
  * Get image type from path
  */
-function getImageType(imagePath: string): "jpg" | "png" | "gif" | "bmp" {
+function getImageType(imagePath: string): 'jpg' | 'png' | 'gif' | 'bmp' {
   const ext = path.extname(imagePath).toLowerCase();
-  const types: Record<string, "jpg" | "png" | "gif" | "bmp"> = {
-    ".jpg": "jpg",
-    ".jpeg": "jpg",
-    ".png": "png",
-    ".gif": "gif",
-    ".bmp": "bmp",
+  const types: Record<string, 'jpg' | 'png' | 'gif' | 'bmp'> = {
+    '.jpg': 'jpg',
+    '.jpeg': 'jpg',
+    '.png': 'png',
+    '.gif': 'gif',
+    '.bmp': 'bmp',
   };
-  return types[ext] || "png";
+  return types[ext] || 'png';
 }
