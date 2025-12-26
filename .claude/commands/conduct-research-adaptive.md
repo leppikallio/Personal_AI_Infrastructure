@@ -67,10 +67,33 @@ SlashCommand: /_research-init "$USER_QUERY"
 SlashCommand: /_research-collect $SESSION_DIR
 ```
 
+**Sub-Phases (all visible in progress tracking):**
+
+| Sub-Phase | Marker | Description |
+|-----------|--------|-------------|
+| 2.1 Launch Wave 1 | `.wave1-launched` | Launch N agents with perspectives |
+| 2.2 Wait for Agents | `.wave1-complete` | Wait for ALL agents (no bailout) |
+| 2.3 Pivot Analysis | `.pivot-complete` | Quality scoring + domain signals + gap detection |
+| 2.4 Wave 2 Specialists | `.wave2-complete` or `.wave2-skipped` | Launch specialists if pivot triggered |
+| 2.5 Citation Validation | `.citations-validated` | **BLOCKING** - Validate all URLs, track hallucinations |
+
+**TodoWrite structure for Phase 2:**
+```typescript
+TodoWrite({ todos: [
+  { content: "Phase 2: Collect research", status: "in_progress", activeForm: "Collecting research" },
+  { content: "  2.1: Launch Wave 1 agents", status: "pending", activeForm: "Launching Wave 1 agents" },
+  { content: "  2.2: Wait for all agents", status: "pending", activeForm: "Waiting for agents" },
+  { content: "  2.3: Pivot analysis", status: "pending", activeForm: "Running pivot analysis" },
+  { content: "  2.4: Wave 2 specialists", status: "pending", activeForm: "Launching Wave 2 specialists" },
+  { content: "  2.5: Validate citations", status: "pending", activeForm: "Validating citations" },
+]})
+```
+
 **Quality Gate (after /_research-collect completes):**
+- [ ] All 5 sub-phase markers exist
 - [ ] Wave 1 files exist in `$SESSION_DIR/wave-1/`
 - [ ] Citation validation report exists
-- [ ] Total validated citations ≥ 50
+- [ ] Total validated citations >= 50
 - [ ] Invalid citation rate < 20%
 
 **If gate fails:**
@@ -90,19 +113,44 @@ SlashCommand: /_research-collect $SESSION_DIR
 SlashCommand: /_research-synthesize $SESSION_DIR
 ```
 
+**Sub-Phases (all visible in progress tracking):**
+
+| Sub-Phase | Marker | Description |
+|-----------|--------|-------------|
+| 3.0 Citation Pooling | `.citations-pooled` | Unify all citations from all agents |
+| 3.1 Perspective Summarizers | `.summaries-complete` | Launch N parallel summarizer agents |
+| 3.2 Cross-Perspective Synthesis | `.synthesis-complete` | Single synthesizer produces final output |
+| 3.3 Task Graph | (inline) | Generate decision trail |
+| 3.4 Platform Coverage | (inline) | Validate all platforms covered |
+
+**TodoWrite structure for Phase 3:**
+```typescript
+TodoWrite({ todos: [
+  { content: "Phase 3: Synthesize findings", status: "in_progress", activeForm: "Synthesizing findings" },
+  { content: "  3.0: Pool all citations", status: "pending", activeForm: "Pooling citations" },
+  { content: "  3.1: Launch N summarizers", status: "pending", activeForm: "Launching summarizers" },
+  { content: "  3.2: Cross-perspective synthesis", status: "pending", activeForm: "Running cross-synthesis" },
+  { content: "  3.3: Generate task graph", status: "pending", activeForm: "Generating task graph" },
+  { content: "  3.4: Platform coverage check", status: "pending", activeForm: "Checking platform coverage" },
+]})
+```
+
 **Quality Gate (after /_research-synthesize completes):**
+- [ ] `$SESSION_DIR/summaries/summary-*.md` files exist
 - [ ] `$SESSION_DIR/final-synthesis.md` exists
 - [ ] File size 15-40KB
 - [ ] Citation utilization reported
 
 **If gate fails:**
-- If no file: Re-run /_research-synthesize
+- If no summaries: Re-run /_research-synthesize-parallel
+- If no synthesis: Re-run cross-perspective-synthesizer
 - If too small (<15KB): Note as "condensed synthesis"
 - If too large (>40KB): Acceptable, may need trimming
 
 **Extract from output:**
 - Synthesis file location
 - Citation utilization %
+- Summaries created count
 
 ---
 
@@ -191,21 +239,29 @@ After all phases complete successfully, use the mandatory format below.
 3. **PASS SESSION_DIR** to each subsequent phase
 4. **DON'T skip phases** - each builds on the previous
 
-### Quality Gate Enforcement
-5. **LOG failures** with specific reason
-6. **RETRY once** on transient failures
-7. **PROCEED with warnings** on non-critical failures
-8. **ABORT only** if multiple critical failures
+### Sub-Phase Visibility (MANDATORY)
+5. **UPDATE TodoWrite** with sub-phases at start of each major phase
+6. **MARK sub-phases in_progress/completed** as you execute them
+7. **USER MUST SEE** every sub-phase status (2.1, 2.2, 2.3, etc.)
+8. **VERIFY markers exist** before proceeding to next sub-phase
 
-### Citation Validation
-9. **DO NOT SKIP** citation validation in /_research-collect
-10. **60% utilization** is minimum acceptable
-11. **Flag invalid citations** - do not use in synthesis
+### Quality Gate Enforcement
+9. **LOG failures** with specific reason
+10. **RETRY once** on transient failures
+11. **PROCEED with warnings** on non-critical failures
+12. **ABORT only** if multiple critical failures
+
+### Citation Validation (BLOCKING OPERATION)
+13. **DO NOT SKIP** citation validation in /_research-collect
+14. **MUST BE BLOCKING** - Do NOT run in background, do NOT proceed to synthesis while running
+15. **60% utilization** is minimum acceptable
+16. **Flag invalid citations** - do not use in synthesis
+17. **Entry gate exists** - /_research-synthesize will HALT if .citations-validated marker missing
 
 ### Sub-Agent Coordination
-12. **Sub-agents get FRESH context** - pass all needed info explicitly
-13. **Don't assume** sub-agents know session state
-14. **Verify outputs** exist after each sub-command
+16. **Sub-agents get FRESH context** - pass all needed info explicitly
+17. **Don't assume** sub-agents know session state
+18. **Verify outputs** exist after each sub-command
 
 ---
 
@@ -233,27 +289,33 @@ If research commands report being blocked, encountering CAPTCHAs, or facing bot 
    - Output: WAVE1_COUNT=5
    - Gate: ✅ All files created
 
-2. ✅ **Phase 2: Collect**
+2. ✅ **Phase 2: Collect** (with visible sub-phases)
    ```
    SlashCommand: /_research-collect ${PAI_DIR}/scratchpad/research/20251128-143022-12345
    ```
-   - Output: 142 total citations, 128 valid
-   - Output: Wave 2 launched (3 specialists)
-   - Gate: ✅ Citations validated, Wave 2 complete
+   - ✅ 2.1: Launch Wave 1 agents (5 agents launched)
+   - ✅ 2.2: Wait for all agents (5/5 complete)
+   - ✅ 2.3: Pivot analysis (quality 87/100, 2 domain signals)
+   - ✅ 2.4: Wave 2 specialists (3 specialists launched)
+   - ✅ 2.5: Validate citations (142 total, 128 valid)
+   - Gate: ✅ All sub-phase markers exist
 
-3. ✅ **Phase 3: Synthesize**
+3. ✅ **Phase 3: Synthesize** (with visible sub-phases)
    ```
    SlashCommand: /_research-synthesize ${PAI_DIR}/scratchpad/research/20251128-143022-12345
    ```
-   - Output: final-synthesis.md (28KB)
-   - Output: Citation utilization 72%
-   - Gate: ✅ Synthesis complete
+   - ✅ 3.0: Pool citations (unified-citations.md created)
+   - ✅ 3.1: Launch 8 summarizers (8 summaries created)
+   - ✅ 3.2: Cross-perspective synthesis (final-synthesis.md 28KB)
+   - ✅ 3.3: Task graph generated
+   - ✅ 3.4: Platform coverage verified
+   - Gate: ✅ Synthesis complete, utilization 72%
 
 4. ✅ **Phase 4: Validate**
    ```
    SlashCommand: /_research-validate ${PAI_DIR}/scratchpad/research/20251128-143022-12345
    ```
-   - Output: Citation utilization 72% (≥60% ✅)
+   - Output: Citation utilization 72% (>=60% ✅)
    - Output: 6/6 parts present ✅
    - Output: Density ratio 1.2 ✅
    - Gate: ✅ All validations passed

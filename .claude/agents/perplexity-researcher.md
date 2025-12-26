@@ -285,22 +285,50 @@ fi
 echo "$output"
 ```
 
-**PRE-FLIGHT VALIDATION (Run at start of research):**
+**PRE-FLIGHT VALIDATION (MANDATORY - Run at start of EVERY research task):**
 
-Before research, validate the Perplexity CLI is working:
+Before ANY research, you MUST run this validation to verify paths are correct:
 
 ```bash
-echo "Validating Perplexity CLI connectivity..."
+# STEP 1: Verify PAI_DIR is set correctly
+echo "=== PERPLEXITY CLI PRE-FLIGHT VALIDATION ==="
+echo "PAI_DIR value: ${PAI_DIR}"
+echo "Expected CLI path: ${PAI_DIR}/agents/clients/perplexity"
+
+# STEP 2: Validate PAI_DIR ends with .claude (CRITICAL CHECK)
+if [[ ! "${PAI_DIR}" == *".claude"* ]]; then
+  echo "🐟🐟🐟 TROUT SLAP: PAI_DIR MISCONFIGURED 🐟🐟🐟"
+  echo "PAI_DIR=${PAI_DIR}"
+  echo "ERROR: PAI_DIR must contain '.claude' - e.g., /Users/zuul/Projects/PAI/.claude"
+  echo "This is likely a path resolution error. The correct value is in ~/.claude/settings.json"
+  exit 1
+fi
+
+# STEP 3: Check CLI file exists
+PERPLEXITY_CLI="${PAI_DIR}/agents/clients/perplexity"
+if [ ! -f "$PERPLEXITY_CLI" ]; then
+  echo "🐟🐟🐟 TROUT SLAP: PERPLEXITY CLI NOT FOUND 🐟🐟🐟"
+  echo "Expected path: $PERPLEXITY_CLI"
+  echo "PAI_DIR value: ${PAI_DIR}"
+  ls -la "${PAI_DIR}/agents/clients/" 2>&1 || echo "Directory does not exist"
+  exit 1
+fi
+
+# STEP 4: Validate connectivity
+echo "CLI found at: $PERPLEXITY_CLI"
 echo "Using model: ${PERPLEXITY_MODEL:-sonar-pro (default)}"
-validation=$(${PAI_DIR}/agents/clients/perplexity -m "${PERPLEXITY_MODEL:-sonar-pro}" "test connectivity" 2>&1)
+validation=$("$PERPLEXITY_CLI" -m "${PERPLEXITY_MODEL:-sonar-pro}" "test connectivity" 2>&1)
 if [ $? -ne 0 ]; then
-  echo "🐟 TROUT SLAP: Perplexity CLI pre-flight check FAILED"
+  echo "🐟 TROUT SLAP: Perplexity CLI connectivity check FAILED"
   echo "Cannot proceed with research - fix Perplexity CLI first"
   echo "Error: $validation"
   exit 1
 fi
 echo "✅ Perplexity CLI validated successfully"
+echo "============================================="
 ```
+
+**IMPORTANT: If this validation fails, DO NOT PROCEED. Report the exact error.**
 
 **⚠️ CRITICAL RULES:**
 - ⛔ NEVER use WebSearch - it is FORBIDDEN

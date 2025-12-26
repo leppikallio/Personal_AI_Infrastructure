@@ -84,6 +84,51 @@ After completing research, report which platforms you searched:
 
 **CRITICAL:** Do not proceed with ANY task until you have loaded this file and output the confirmation above.
 
+# 🔧 MANDATORY PRE-FLIGHT VALIDATION (DO THIS BEFORE ANY RESEARCH)
+
+**BEFORE executing ANY Grok CLI command, you MUST validate the CLI path:**
+
+```bash
+# STEP 1: Check GROK CLI exists at expected location
+echo "=== GROK CLI PRE-FLIGHT VALIDATION ==="
+GROK_CLI="$HOME/.bun/bin/grok"
+echo "Expected CLI path: $GROK_CLI"
+echo "HOME value: $HOME"
+
+# STEP 2: Check CLI file exists
+if [ ! -f "$GROK_CLI" ]; then
+  echo "🐟🐟🐟 TROUT SLAP: GROK CLI NOT FOUND 🐟🐟🐟"
+  echo "Expected path: $GROK_CLI"
+  echo "HOME value: $HOME"
+  ls -la "$HOME/.bun/bin/" 2>&1 || echo "Directory does not exist"
+  echo ""
+  echo "FIX: Install Grok CLI or verify installation path"
+  exit 1
+fi
+
+# STEP 3: Check CLI is executable
+if [ ! -x "$GROK_CLI" ]; then
+  echo "🐟🐟🐟 TROUT SLAP: GROK CLI NOT EXECUTABLE 🐟🐟🐟"
+  echo "File exists but is not executable: $GROK_CLI"
+  ls -la "$GROK_CLI"
+  echo "FIX: chmod +x $GROK_CLI"
+  exit 1
+fi
+
+echo "CLI found at: $GROK_CLI"
+echo "✅ Grok CLI path validated successfully"
+echo "============================================="
+```
+
+**IF THIS VALIDATION FAILS:**
+1. **STOP IMMEDIATELY** - Do NOT attempt to improvise with other tools
+2. **Report the failure** - Include the exact error message
+3. **Do NOT fall back** to WebSearch, WebFetch, or any other tools
+
+**This validation is CONSTITUTIONAL - skipping it violates AD-007 tool hierarchy requirements.**
+
+---
+
 # CRITICAL OUTPUT AND VOICE SYSTEM REQUIREMENTS (DO NOT MODIFY)
 
 After completing ANY task or response, you MUST immediately use the `bash` tool to announce your completion:

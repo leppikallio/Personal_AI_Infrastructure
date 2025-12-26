@@ -45,6 +45,7 @@ After completing this phase:
 **Step 3.3a: Verify Output Exists**
 
 ```bash
+set +H  # Disable history expansion
 if [ ! -f "${SESSION_DIR}/final-synthesis.md" ]; then
   echo "❌ SYNTHESIS FAILED: No output file"
   echo "ACTION: Diagnose issue and re-launch synthesis-researcher"
@@ -67,6 +68,7 @@ Check synthesis-researcher's reported metrics:
 **Step 3.3c: Verify Structure Completeness**
 
 ```bash
+set +H  # Disable history expansion
 # Check for required sections
 grep -q "## Part I: Executive Summary" "${SESSION_DIR}/final-synthesis.md" || echo "❌ Missing Part I"
 grep -q "## Part II: Research Methodology" "${SESSION_DIR}/final-synthesis.md" || echo "❌ Missing Part II"

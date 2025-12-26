@@ -32,9 +32,53 @@ After completing this phase, the following will exist:
 
 ## STEP-BY-STEP WORKFLOW
 
-### Step 0: Initialize Session (For File Output)
+### Step 0: Initialize Full Phase Tracking (MANDATORY FIRST ACTION)
 
-**FIRST: Get current date and create a session-specific directory for research file output.**
+**BEFORE ANYTHING ELSE: Set up TodoWrite with ALL phases AND sub-phases visible to user.**
+
+```typescript
+TodoWrite({ todos: [
+  { content: "Phase 1: Initialize research session", status: "in_progress", activeForm: "Initializing research session" },
+  { content: "  1.1: Create session directory", status: "pending", activeForm: "Creating session directory" },
+  { content: "  1.2: Analyze query (perspectives)", status: "pending", activeForm: "Analyzing query" },
+  { content: "  1.3: Allocate research tracks", status: "pending", activeForm: "Allocating tracks" },
+  { content: "Phase 2: Collect research", status: "pending", activeForm: "Collecting research" },
+  { content: "  2.1: Launch Wave 1 agents", status: "pending", activeForm: "Launching Wave 1 agents" },
+  { content: "  2.2: Wait for all agents", status: "pending", activeForm: "Waiting for agents" },
+  { content: "  2.3: Pivot analysis", status: "pending", activeForm: "Running pivot analysis" },
+  { content: "  2.4: Wave 2 specialists", status: "pending", activeForm: "Launching Wave 2 specialists" },
+  { content: "  2.5: Validate citations", status: "pending", activeForm: "Validating citations" },
+  { content: "Phase 3: Synthesize findings", status: "pending", activeForm: "Synthesizing findings" },
+  { content: "  3.0: Pool all citations", status: "pending", activeForm: "Pooling citations" },
+  { content: "  3.1: Launch N summarizers", status: "pending", activeForm: "Launching summarizers" },
+  { content: "  3.2: Cross-perspective synthesis", status: "pending", activeForm: "Running cross-synthesis" },
+  { content: "  3.3: Generate task graph", status: "pending", activeForm: "Generating task graph" },
+  { content: "  3.4: Platform coverage check", status: "pending", activeForm: "Checking platform coverage" },
+  { content: "Phase 4: Validate quality", status: "pending", activeForm: "Validating quality" },
+  { content: "  4.1: Citation utilization check", status: "pending", activeForm: "Checking citation utilization" },
+  { content: "  4.2: Structure validation", status: "pending", activeForm: "Validating structure" },
+  { content: "  4.3: Density ratio check", status: "pending", activeForm: "Checking density ratio" },
+  { content: "Phase 5: Report results", status: "pending", activeForm: "Reporting results" },
+]})
+```
+
+**WHY ALL SUB-PHASES MUST BE VISIBLE FROM START:**
+- User can see the FULL workflow before it begins
+- Provides assurance that critical steps (citation validation!) won't be skipped
+- Makes progress visible at granular level
+- Creates accountability - if a sub-phase is missing from tracking, it's a bug
+
+**UPDATE RULES:**
+- Mark each sub-phase `in_progress` when starting it
+- Mark each sub-phase `completed` immediately when done
+- NEVER remove sub-phases from the list
+- If a sub-phase is skipped (e.g., Wave 2), mark it `completed` with note in status
+
+---
+
+### Step 0.1: Create Session Directory (For File Output)
+
+**Get current date and create a session-specific directory for research file output.**
 
 ```bash
 CURRENT_DATE=$(date +"%Y-%m-%d")
@@ -75,38 +119,176 @@ This ensures:
 Execute the query analyzer CLI with `--perspectives` flag:
 
 ```bash
-# Run perspective-first analysis (generates perspectives, classifies, validates, routes)
-# stderr contains progress logs, stdout contains JSON result
-ANALYSIS_JSON=$(bun ${PAI_DIR}/utilities/query-analyzer/query-analyzer.ts --perspectives "$USER_QUERY" 2>/dev/null)
+# ============================================================================
+# TEMP FILE APPROACH (avoids shell history expansion issues with '!')
+# ============================================================================
+# JSON containing '!' characters causes bash history expansion errors when
+# stored in shell variables and echoed. Solution: write directly to temp
+# files and use jq/cat to read them, never passing JSON through echo.
+# ============================================================================
 
-# Parse results into shell variables
-COMPLEXITY=$(echo "$ANALYSIS_JSON" | jq -r '.overallComplexity')
-PERSPECTIVE_COUNT=$(echo "$ANALYSIS_JSON" | jq -r '.perspectiveCount')
-OVERALL_CONFIDENCE=$(echo "$ANALYSIS_JSON" | jq -r '.overallConfidence')
-TIME_SENSITIVE=$(echo "$ANALYSIS_JSON" | jq -r '.timeSensitive')
-REASONING=$(echo "$ANALYSIS_JSON" | jq -r '.reasoning')
+SANITIZER="${PAI_DIR}/utilities/input-sanitizer/sanitizer.ts"
+RAW_JSON_FILE=$(mktemp)
+SANITIZED_JSON_FILE=$(mktemp)
 
-# Extract agent allocation (calculated from perspective-to-agent mapping)
-PERPLEXITY_COUNT=$(echo "$ANALYSIS_JSON" | jq -r '.agentAllocation["perplexity-researcher"]')
-CLAUDE_COUNT=$(echo "$ANALYSIS_JSON" | jq -r '.agentAllocation["claude-researcher"]')
-GEMINI_COUNT=$(echo "$ANALYSIS_JSON" | jq -r '.agentAllocation["gemini-researcher"]')
-GROK_COUNT=$(echo "$ANALYSIS_JSON" | jq -r '.agentAllocation["grok-researcher"]')
+# Cleanup function
+cleanup_temp_files() {
+  rm -f "$RAW_JSON_FILE" "$SANITIZED_JSON_FILE" 2>/dev/null
+}
+trap cleanup_temp_files EXIT
 
-# Calculate total Wave 1 agents
+# ============================================================================
+# Step 1: Run analyzer, write directly to temp file (never to shell variable)
+# ============================================================================
+bun ${PAI_DIR}/utilities/query-analyzer/query-analyzer.ts --perspectives "$USER_QUERY" 2>/dev/null > "$RAW_JSON_FILE"
+
+# Check if file has content
+if [ ! -s "$RAW_JSON_FILE" ]; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "❌ FATAL ERROR: Analyzer returned empty output"
+  echo "══════════════════════════════════════════════════════════════════════"
+  exit 1
+fi
+
+# Validate JSON structure using file directly (no shell variable)
+if ! jq empty "$RAW_JSON_FILE" 2>/dev/null; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "❌ FATAL ERROR: Analyzer returned invalid JSON"
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "First 500 characters:"
+  head -c 500 "$RAW_JSON_FILE"
+  echo ""
+  exit 1
+fi
+
+# ============================================================================
+# Step 2: Run sanitizer (pipe from file, not echo)
+# ============================================================================
+cat "$RAW_JSON_FILE" | bun "$SANITIZER" --schema=analysis --for-shell 2>/dev/null > "$SANITIZED_JSON_FILE"
+
+# Check sanitization result
+SANITIZE_VALID=$(jq -r '.valid // false' "$SANITIZED_JSON_FILE" 2>/dev/null)
+if [ "$SANITIZE_VALID" != "true" ]; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "❌ SECURITY VALIDATION FAILED"
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "Errors:"
+  jq -r '.errors[]? // "Unknown error"' "$SANITIZED_JSON_FILE"
+  echo ""
+  echo "The query analyzer returned invalid or malformed JSON."
+  exit 1
+fi
+
+# Check for security warnings
+SANITIZE_WARNINGS=$(jq -r '.warnings | length' "$SANITIZED_JSON_FILE")
+if [ "$SANITIZE_WARNINGS" -gt 0 ]; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "⚠️  SECURITY WARNINGS DETECTED"
+  echo "══════════════════════════════════════════════════════════════════════"
+  jq -r '.warnings[]' "$SANITIZED_JSON_FILE"
+  echo ""
+  echo "Proceeding with sanitized output, but flagging for review."
+  jq '.warnings' "$SANITIZED_JSON_FILE" > "$SESSION_DIR/analysis/security-warnings.json" 2>/dev/null || true
+fi
+
+# Extract sanitized data to the analysis file (final destination)
+jq -r '.data' "$SANITIZED_JSON_FILE" > "$SESSION_DIR/analysis/query-analysis.json"
+
+echo "🔒 Security validation passed (sanitizer applied)"
+
+# ============================================================================
+# Step 3: Validate and extract from the sanitized JSON file
+# ============================================================================
+ANALYSIS_FILE="$SESSION_DIR/analysis/query-analysis.json"
+
+# Validate minimum length
+JSON_LENGTH=$(wc -c < "$ANALYSIS_FILE" | tr -d ' ')
+if [ "$JSON_LENGTH" -lt 500 ]; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "❌ FATAL ERROR: JSON suspiciously short ($JSON_LENGTH chars)"
+  echo "══════════════════════════════════════════════════════════════════════"
+  cat "$ANALYSIS_FILE"
+  exit 1
+fi
+
+# Validate required fields (read from file, not variable)
+validate_json_field() {
+  local file="$1" field="$2" expected_type="$3"
+  local value=$(jq -r "$field // empty" "$file" 2>/dev/null)
+  if [ -z "$value" ] || [ "$value" = "null" ]; then
+    echo "❌ VALIDATION FAILED: Missing required field: $field"
+    return 1
+  fi
+  case "$expected_type" in
+    array)
+      if ! jq -e "$field | type == \"array\"" "$file" >/dev/null 2>&1; then
+        echo "❌ VALIDATION FAILED: $field must be an array"
+        return 1
+      fi
+      ;;
+    number)
+      if ! jq -e "$field | type == \"number\"" "$file" >/dev/null 2>&1; then
+        echo "❌ VALIDATION FAILED: $field must be a number"
+        return 1
+      fi
+      ;;
+    object)
+      if ! jq -e "$field | type == \"object\"" "$file" >/dev/null 2>&1; then
+        echo "❌ VALIDATION FAILED: $field must be an object"
+        return 1
+      fi
+      ;;
+  esac
+  return 0
+}
+
+VALIDATION_FAILED=0
+validate_json_field "$ANALYSIS_FILE" ".perspectives" "array" || VALIDATION_FAILED=1
+validate_json_field "$ANALYSIS_FILE" ".agentAllocation" "object" || VALIDATION_FAILED=1
+validate_json_field "$ANALYSIS_FILE" ".perspectiveCount" "number" || VALIDATION_FAILED=1
+validate_json_field "$ANALYSIS_FILE" ".overallConfidence" "number" || VALIDATION_FAILED=1
+
+if [ "$VALIDATION_FAILED" -eq 1 ]; then
+  echo "══════════════════════════════════════════════════════════════════════"
+  echo "❌ FATAL ERROR: JSON missing required fields"
+  echo "══════════════════════════════════════════════════════════════════════"
+  jq '.' "$ANALYSIS_FILE" 2>/dev/null || cat "$ANALYSIS_FILE"
+  exit 1
+fi
+
+# Sanity check perspective count
+PERSP_COUNT=$(jq -r '.perspectiveCount' "$ANALYSIS_FILE")
+if [ "$PERSP_COUNT" -lt 1 ] || [ "$PERSP_COUNT" -gt 20 ]; then
+  echo "❌ FATAL ERROR: perspectiveCount out of range: $PERSP_COUNT (expected 1-20)"
+  exit 1
+fi
+
+echo "✅ JSON validation passed ($JSON_LENGTH chars, $PERSP_COUNT perspectives)"
+
+# ============================================================================
+# Step 4: Extract values from file (all jq reads from file, not variable)
+# ============================================================================
+COMPLEXITY=$(jq -r '.overallComplexity' "$ANALYSIS_FILE")
+PERSPECTIVE_COUNT=$(jq -r '.perspectiveCount' "$ANALYSIS_FILE")
+OVERALL_CONFIDENCE=$(jq -r '.overallConfidence' "$ANALYSIS_FILE")
+TIME_SENSITIVE=$(jq -r '.timeSensitive' "$ANALYSIS_FILE")
+REASONING=$(jq -r '.reasoning' "$ANALYSIS_FILE")
+
+PERPLEXITY_COUNT=$(jq -r '.agentAllocation["perplexity-researcher"]' "$ANALYSIS_FILE")
+CLAUDE_COUNT=$(jq -r '.agentAllocation["claude-researcher"]' "$ANALYSIS_FILE")
+GEMINI_COUNT=$(jq -r '.agentAllocation["gemini-researcher"]' "$ANALYSIS_FILE")
+GROK_COUNT=$(jq -r '.agentAllocation["grok-researcher"]' "$ANALYSIS_FILE")
+
 WAVE1_COUNT=$((PERPLEXITY_COUNT + CLAUDE_COUNT + GEMINI_COUNT + GROK_COUNT))
 
-# Extract perspectives as array for agent prompts
-PERSPECTIVES=$(echo "$ANALYSIS_JSON" | jq -c '.perspectives')
+# Extract perspectives as array (write to file, not variable)
+jq -c '.perspectives' "$ANALYSIS_FILE" > "$SESSION_DIR/analysis/perspectives.json"
 
-# Check if any perspectives triggered ensemble fallback
-ENSEMBLE_TRIGGERED=$(echo "$ANALYSIS_JSON" | jq -r '.ensembleTriggered | length')
-
-# Save full analysis to session directory
-echo "$ANALYSIS_JSON" > "$SESSION_DIR/analysis/query-analysis.json"
+# Check ensemble fallbacks
+ENSEMBLE_TRIGGERED=$(jq -r '.ensembleTriggered | length // 0' "$ANALYSIS_FILE")
 
 # Extract platform requirements per perspective (AD-006)
-PLATFORM_REQUIREMENTS=$(echo "$ANALYSIS_JSON" | jq -c '[.perspectives[] | {text: .text, platforms: [.platforms[].name]}]')
-echo "$PLATFORM_REQUIREMENTS" > "$SESSION_DIR/analysis/platform-requirements.json"
+jq -c '[.perspectives[] | {text: .text, platforms: [.platforms[]?.name // empty]}]' "$ANALYSIS_FILE" > "$SESSION_DIR/analysis/platform-requirements.json"
 
 # Report analysis results
 echo "📊 Perspective-First Analysis Complete (AD-005)"
@@ -119,7 +301,7 @@ echo "   Wave 1 Agents: $WAVE1_COUNT total"
 echo "   Allocation: ${PERPLEXITY_COUNT}×perplexity, ${CLAUDE_COUNT}×claude, ${GEMINI_COUNT}×gemini, ${GROK_COUNT}×grok"
 echo ""
 echo "📝 Perspectives:"
-echo "$ANALYSIS_JSON" | jq -r '.perspectives[] | "   → [\(.domain)] \(.text | .[0:60])..."'
+jq -r '.perspectives[] | "   → [\(.domain)] \(.text | .[0:60])..."' "$ANALYSIS_FILE"
 ```
 
 **What This Does:**
@@ -195,10 +377,26 @@ Example pivot predictions:
 **Step 0.5e: Create Human-Readable Analysis Report**
 
 ```bash
-# Extract pivot predictions and reasoning from JSON
-PIVOTS_JSON=$(echo "$ANALYSIS_JSON" | jq '.expected_pivots')
-REASONING=$(echo "$ANALYSIS_JSON" | jq -r '.reasoning')
-SECONDARY_DOMAINS=$(echo "$ANALYSIS_JSON" | jq -r '.secondary_domains | join(", ")')
+# ============================================================================
+# Use ANALYSIS_FILE (set in Step 0.5a) - never echo JSON through shell
+# ============================================================================
+ANALYSIS_FILE="$SESSION_DIR/analysis/query-analysis.json"
+
+# Extract values using jq from file (not variable)
+PIVOTS_JSON=$(jq '.expected_pivots // {}' "$ANALYSIS_FILE")
+SECONDARY_DOMAINS=$(jq -r '.secondary_domains // [] | join(", ")' "$ANALYSIS_FILE")
+DOMAIN_SCORES=$(jq -r '
+  .domain_scores // {} |
+  to_entries |
+  map("| \(.key | gsub("_"; " ")) | \(.value) |") |
+  join("\n")
+' "$ANALYSIS_FILE")
+PIVOT_PREDICTIONS=$(jq -r '
+  .expected_pivots // {} |
+  to_entries |
+  map("### Prediction \(.key + 1): \(.value.scenario // "N/A")\n- **Likely Pivot:** \(.value.likely_pivot // "N/A")\n- **Trigger:** \(.value.trigger // "N/A")\n- **Wave 2 Response:** \(.value.wave2_specialists // "N/A")\n- **Confidence:** \(.value.confidence // "MODERATE")\n") |
+  join("\n")
+' "$ANALYSIS_FILE")
 
 # Create human-readable markdown report
 cat > "$SESSION_DIR/analysis/query-analysis.md" <<EOF
@@ -206,26 +404,14 @@ cat > "$SESSION_DIR/analysis/query-analysis.md" <<EOF
 
 **Query:** $USER_QUERY
 **Date:** $CURRENT_DATE
-**Analyzer:** $ANALYZER_USED${LLM_CONFIDENCE:+ (confidence: ${LLM_CONFIDENCE}%)}
 **Session:** $SESSION_ID
 
 ---
 
 ## Domain Scoring
 
-$(echo "$ANALYSIS_JSON" | jq -r '
-  .domain_scores |
-  to_entries |
-  map("| \(.key | gsub("_"; " ") | ascii_upcase[:1] + .[1:]) | \(.value) | \(
-    if .key == .primary_domain then "PRIMARY"
-    elif (.secondary_domains | index(.key)) then "SECONDARY"
-    else "None"
-    end
-  ) |") |
-  join("\n")
-')
+$DOMAIN_SCORES
 
-**Primary Domain:** $PRIMARY_DOMAIN
 **Secondary Domains:** ${SECONDARY_DOMAINS:-None}
 
 ---
@@ -253,11 +439,7 @@ $(echo "$ANALYSIS_JSON" | jq -r '
 
 ## Expected Pivot Predictions
 
-$(echo "$PIVOTS_JSON" | jq -r '
-  to_entries |
-  map("### Prediction \(.key + 1): \(.value.scenario)\n- **Likely Pivot:** \(.value.likely_pivot)\n- **Trigger:** \(.value.trigger)\n- **Wave 2 Response:** \(.value.wave2_specialists)\n- **Confidence:** \(.value.confidence // "MODERATE")\n") |
-  join("\n")
-')
+$PIVOT_PREDICTIONS
 
 ---
 
@@ -286,6 +468,11 @@ Research tracks ensure diverse sourcing strategies:
 **Step 0.6a: Allocate Perspectives to Tracks**
 
 ```bash
+# ============================================================================
+# Use ANALYSIS_FILE (set in Step 0.5a) - never echo JSON through shell
+# ============================================================================
+ANALYSIS_FILE="$SESSION_DIR/analysis/query-analysis.json"
+
 # Calculate track distribution from perspective count
 STANDARD_COUNT=$(( PERSPECTIVE_COUNT / 2 ))  # 50%
 INDEPENDENT_COUNT=$(( PERSPECTIVE_COUNT / 4 ))  # 25%
@@ -314,8 +501,8 @@ sed -i '' "s/STANDARD_COUNT_PLACEHOLDER/$STANDARD_COUNT/" "$TRACK_ALLOCATION"
 sed -i '' "s/INDEPENDENT_COUNT_PLACEHOLDER/$INDEPENDENT_COUNT/" "$TRACK_ALLOCATION"
 sed -i '' "s/CONTRARIAN_COUNT_PLACEHOLDER/$CONTRARIAN_COUNT/" "$TRACK_ALLOCATION"
 
-# Add track assignments to JSON (using jq to build array)
-TRACKS_ARRAY=$(echo "$ANALYSIS_JSON" | jq -c --argjson std "$STANDARD_COUNT" --argjson ind "$INDEPENDENT_COUNT" '
+# Add track assignments to JSON (using jq from file, not variable)
+TRACKS_ARRAY=$(jq -c --argjson std "$STANDARD_COUNT" --argjson ind "$INDEPENDENT_COUNT" '
   [.perspectives | to_entries[] |
     if .key < $std then
       {
@@ -346,11 +533,12 @@ TRACKS_ARRAY=$(echo "$ANALYSIS_JSON" | jq -c --argjson std "$STANDARD_COUNT" --a
       }
     end
   ]
-')
+' "$ANALYSIS_FILE")
 
-# Merge tracks array into allocation JSON
-FINAL_ALLOCATION=$(jq --argjson tracks "$TRACKS_ARRAY" '.tracks = $tracks' "$TRACK_ALLOCATION")
-echo "$FINAL_ALLOCATION" > "$TRACK_ALLOCATION"
+# Merge tracks array into allocation JSON (write to temp, then move)
+TEMP_TRACK=$(mktemp)
+jq --argjson tracks "$TRACKS_ARRAY" '.tracks = $tracks' "$TRACK_ALLOCATION" > "$TEMP_TRACK"
+mv "$TEMP_TRACK" "$TRACK_ALLOCATION"
 
 echo "🎯 Track Allocation Complete (M10)"
 echo "   Standard Track: $STANDARD_COUNT perspectives (50%)"
@@ -358,7 +546,7 @@ echo "   Independent Track: $INDEPENDENT_COUNT perspectives (25%)"
 echo "   Contrarian Track: $CONTRARIAN_COUNT perspectives (25%)"
 echo ""
 echo "📊 Track Distribution:"
-echo "$FINAL_ALLOCATION" | jq -r '.tracks[] | "   [\(.track | ascii_upcase)] \(.perspective | .[0:50])... → \(.recommended_agent)"'
+jq -r '.tracks[] | "   [\(.track | ascii_upcase)] \(.perspective | .[0:50])... → \(.recommended_agent)"' "$TRACK_ALLOCATION"
 echo ""
 echo "💾 Track allocation saved: $TRACK_ALLOCATION"
 ```
@@ -371,6 +559,26 @@ echo "💾 Track allocation saved: $TRACK_ALLOCATION"
 **Step 0.6b: Human-Readable Track Report**
 
 ```bash
+# ============================================================================
+# Use TRACK_ALLOCATION file (set in Step 0.6a) - never echo JSON through shell
+# ============================================================================
+TRACK_ALLOCATION="$SESSION_DIR/analysis/track-allocation.json"
+
+# Extract track assignments using jq from file
+TRACK_ASSIGNMENTS=$(jq -r '.tracks[] |
+"### Perspective \(.perspective_index + 1): \(.track | ascii_upcase) Track
+
+**Domain:** \(.domain)
+**Agent:** \(.recommended_agent)
+**Track:** \(.track)
+**Source Guidance:** \(.source_guidance)
+
+**Perspective:**
+\(.perspective)
+
+---
+"' "$TRACK_ALLOCATION")
+
 # Create markdown report for track allocation
 cat > "$SESSION_DIR/analysis/track-allocation.md" <<EOF
 # Track Allocation Report (M10 - Source Quality Framework)
@@ -384,19 +592,7 @@ cat > "$SESSION_DIR/analysis/track-allocation.md" <<EOF
 
 ## Track Assignments
 
-$(echo "$FINAL_ALLOCATION" | jq -r '.tracks[] |
-"### Perspective \(.perspective_index + 1): \(.track | ascii_upcase) Track
-
-**Domain:** \(.domain)
-**Agent:** \(.recommended_agent)
-**Track:** \(.track)
-**Source Guidance:** \(.source_guidance)
-
-**Perspective:**
-\(.perspective)
-
----
-"')
+$TRACK_ASSIGNMENTS
 
 ## Track Purpose Reference
 

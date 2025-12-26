@@ -86,6 +86,7 @@ history.jsonl
 .claude/ide/
 .claude/context/*
 .claude/telemetry/
+.claude/image-cache/
 
 # PAI Update System (sideloading)
 .claude/pai_updates/

@@ -1,12 +1,13 @@
 /**
  * Pivot Decision Engine
  *
- * 5-component decision matrix for Wave 2 launch:
+ * 6-component decision matrix for Wave 2 launch:
  * 1. Agent Quality Assessment - Poor scores trigger retries/specialists
  * 2. Domain Signal Detection - Strong signals trigger specialists
  * 3. Coverage Gap Analysis - Multiple gaps trigger fill specialists
  * 4. Platform Coverage Validation (AD-008) - Uncovered perspectives trigger specialists
  * 5. Source Quality (M10) - Imbalanced sources trigger rebalancing agents
+ * 6. Missed Coverage Detection - Wave 1 executed fewer agents than recommended
  *
  * Aggregates recommendations and makes final Wave 2 launch decision.
  */
@@ -301,6 +302,155 @@ async function analyzeSourceQuality(
   };
 }
 
+/**
+ * Analyze Component 6: Missed Perspective Coverage
+ *
+ * Decision rules:
+ * - Compare recommended agents (from query-analysis.json agentAllocation) vs executed (wave-1 file count)
+ * - Any missed slots trigger Wave 2 specialists to cover those perspectives
+ * - Priority: HIGH when ≥3 missed, MEDIUM when 1-2 missed
+ *
+ * @param sessionDir - Session directory path
+ * @param wave - Current wave number
+ * @param executedAgentCount - Number of agents that actually executed in Wave 1
+ * @param config - Pivot decision configuration
+ * @returns Component analysis result
+ */
+async function analyzeMissedCoverage(
+  sessionDir: string,
+  wave: 1 | 2,
+  executedAgentCount: number,
+  _config: PivotDecisionConfig
+): Promise<PivotDecision['components']['missedCoverage']> {
+  const recommendations: SpecialistRecommendation[] = [];
+  let triggered = false;
+  let reason = 'All recommended agent slots executed';
+  let missedCount = 0;
+  let recommendedAgents = 0;
+  const missedPerspectives: string[] = [];
+
+  // Only run for Wave 1 analysis (Wave 2 doesn't have this concept)
+  if (wave !== 1) {
+    return {
+      triggered: false,
+      reason: 'Missed coverage check only applies to Wave 1',
+      missedCount: 0,
+      recommendedAgents: 0,
+      executedAgents: executedAgentCount,
+      missedPerspectives: [],
+      recommendations: [],
+    };
+  }
+
+  // Try to load query analysis to get recommended agent allocation
+  const queryAnalysisPath = `${sessionDir}/analysis/query-analysis.json`;
+
+  if (!existsSync(queryAnalysisPath)) {
+    console.log('⚠️  Query analysis file not found, skipping missed coverage check');
+    return {
+      triggered: false,
+      reason: 'Query analysis not found (cannot determine recommended agents)',
+      missedCount: 0,
+      recommendedAgents: 0,
+      executedAgents: executedAgentCount,
+      missedPerspectives: [],
+      recommendations: [],
+    };
+  }
+
+  try {
+    const content = await readFile(queryAnalysisPath, 'utf-8');
+    const queryAnalysis = JSON.parse(content);
+
+    // Calculate total recommended agents from allocation
+    const agentAllocation = queryAnalysis.agentAllocation || {};
+    recommendedAgents = (Object.values(agentAllocation) as unknown[]).reduce<number>(
+      (sum, count) => sum + (typeof count === 'number' ? count : 0),
+      0
+    );
+
+    // Calculate missed slots
+    missedCount = recommendedAgents - executedAgentCount;
+
+    if (missedCount > 0) {
+      triggered = true;
+      reason = `${missedCount} recommended agent slots not executed in Wave 1 (${executedAgentCount}/${recommendedAgents})`;
+
+      // Identify which perspectives were likely missed
+      // Use the perspectives array from query analysis
+      const perspectives = queryAnalysis.perspectives || [];
+      const perspectiveCount = queryAnalysis.perspectiveCount || perspectives.length;
+
+      // If we executed fewer agents than perspectives, some perspectives were missed
+      if (executedAgentCount < perspectiveCount) {
+        // Heuristic: Assume later perspectives in the list were dropped
+        // (In practice, the orchestrator should track which perspectives were actually covered)
+        for (let i = executedAgentCount; i < perspectiveCount; i++) {
+          const perspective = perspectives[i];
+          if (perspective) {
+            const perspectiveText = perspective.text?.substring(0, 100) || `Perspective ${i + 1}`;
+            missedPerspectives.push(perspectiveText);
+          }
+        }
+      }
+
+      // Determine priority based on missed count
+      const priority: 'CRITICAL' | 'HIGH' | 'MEDIUM' =
+        missedCount >= 5 ? 'CRITICAL' : missedCount >= 3 ? 'HIGH' : 'MEDIUM';
+
+      // Generate recommendations for missed slots
+      // Distribute across agent types based on original allocation ratios
+      const allocationEntries = Object.entries(agentAllocation)
+        .filter(([_, count]) => typeof count === 'number' && count > 0)
+        .sort(([, a], [, b]) => (b as number) - (a as number));
+
+      // Assign missed slots proportionally
+      let remainingMissed = missedCount;
+      for (const [agentType, _allocatedCount] of allocationEntries) {
+        if (remainingMissed <= 0) break;
+
+        // Assign at least 1 agent per type with allocation, up to missedCount
+        const toAssign = Math.min(
+          remainingMissed,
+          Math.ceil(missedCount / allocationEntries.length)
+        );
+        remainingMissed -= toAssign;
+
+        for (let i = 0; i < toAssign; i++) {
+          const perspective = missedPerspectives[recommendations.length];
+          recommendations.push({
+            agentType: agentType as AgentType,
+            track: 'standard', // Default track for missed coverage
+            focus: perspective || `Missed perspective coverage slot ${recommendations.length + 1}`,
+            platforms: [],
+            rationale: `Covering missed agent slot from Wave 1 allocation (${missedCount} slots missed of ${recommendedAgents} recommended)`,
+            priority,
+            source: 'missed_coverage',
+          });
+        }
+      }
+
+      console.log('\n⚠️  MISSED COVERAGE DETECTED:');
+      console.log(`   Recommended: ${recommendedAgents} agents`);
+      console.log(`   Executed: ${executedAgentCount} agents`);
+      console.log(`   Missed: ${missedCount} slots`);
+      console.log(`   Wave 2 specialists recommended: ${recommendations.length}`);
+    }
+  } catch (error) {
+    console.error(`Failed to load query analysis for missed coverage check: ${error}`);
+  }
+
+  return {
+    triggered,
+    reason,
+    missedCount,
+    recommendedAgents,
+    executedAgents: executedAgentCount,
+    missedPerspectives,
+    recommendations,
+  };
+}
+
 // ============================================================================
 // SPECIALIST AGGREGATION
 // ============================================================================
@@ -391,7 +541,7 @@ function calculateAllocation(specialists: SpecialistRecommendation[]): Record<Ag
 // ============================================================================
 
 /**
- * Make pivot decision based on all 5 components
+ * Make pivot decision based on all 6 components
  *
  * @param input - Quality analysis input data
  * @param config - Optional pivot decision configuration
@@ -410,10 +560,15 @@ export async function makePivotDecision(
       triggered: boolean;
       reason: string;
     };
+    /** Number of agents that actually executed (for missed coverage detection) */
+    executedAgentCount?: number;
   },
   config: PivotDecisionConfig = DEFAULT_PIVOT_CONFIG
 ): Promise<PivotDecision> {
   console.log('🎯 Making pivot decision...');
+
+  // Calculate executed agent count from quality scores if not provided
+  const executedAgentCount = input.executedAgentCount ?? input.quality.scores.length;
 
   // Analyze each component
   const qualityAnalysis = analyzeQuality(input.quality, config);
@@ -421,6 +576,12 @@ export async function makePivotDecision(
   const coverageGapAnalysis = analyzeCoverageGaps(input.coverageGaps, config);
   const platformCoverageAnalysis = analyzePlatformCoverage(input.platformCoverage, config);
   const sourceQualityAnalysis = await analyzeSourceQuality(input.sessionDir, input.wave, config);
+  const missedCoverageAnalysis = await analyzeMissedCoverage(
+    input.sessionDir,
+    input.wave,
+    executedAgentCount,
+    config
+  );
 
   // Collect all recommendations
   const allRecommendations: SpecialistRecommendation[] = [
@@ -429,6 +590,7 @@ export async function makePivotDecision(
     ...coverageGapAnalysis.recommendations,
     ...platformCoverageAnalysis.recommendations,
     ...sourceQualityAnalysis.recommendations,
+    ...missedCoverageAnalysis.recommendations,
   ];
 
   // Aggregate and deduplicate
@@ -441,7 +603,8 @@ export async function makePivotDecision(
     domainSignalAnalysis.triggered ||
     coverageGapAnalysis.triggered ||
     platformCoverageAnalysis.triggered ||
-    sourceQualityAnalysis.triggered;
+    sourceQualityAnalysis.triggered ||
+    missedCoverageAnalysis.triggered;
 
   const shouldLaunchWave2 = anyTriggered && specialists.length > 0;
 
@@ -453,6 +616,7 @@ export async function makePivotDecision(
     coverageGapAnalysis.triggered,
     platformCoverageAnalysis.triggered,
     sourceQualityAnalysis.triggered,
+    missedCoverageAnalysis.triggered,
   ].filter(Boolean).length;
 
   if (triggeredComponents === 0) {
@@ -473,6 +637,7 @@ export async function makePivotDecision(
   if (platformCoverageAnalysis.triggered)
     rationale.push(`Platforms: ${platformCoverageAnalysis.reason}`);
   if (sourceQualityAnalysis.triggered) rationale.push(`Sources: ${sourceQualityAnalysis.reason}`);
+  if (missedCoverageAnalysis.triggered) rationale.push(`Missed: ${missedCoverageAnalysis.reason}`);
 
   if (!shouldLaunchWave2) {
     rationale.push('Wave 1 coverage is sufficient - no Wave 2 needed');
@@ -484,8 +649,11 @@ export async function makePivotDecision(
   console.log('\n📊 Pivot Decision Summary:');
   console.log(`   Launch Wave 2: ${shouldLaunchWave2 ? 'YES' : 'NO'}`);
   console.log(`   Confidence: ${confidence}%`);
-  console.log(`   Triggered components: ${triggeredComponents}/5`);
+  console.log(`   Triggered components: ${triggeredComponents}/6`);
   console.log(`   Specialists: ${specialists.length}`);
+  if (missedCoverageAnalysis.triggered) {
+    console.log(`   ⚠️  Missed coverage: ${missedCoverageAnalysis.missedCount} agent slots`);
+  }
   if (specialists.length > 0) {
     console.log(
       `   Allocation: ${Object.entries(specialistAllocation)
@@ -508,6 +676,7 @@ export async function makePivotDecision(
       coverageGaps: coverageGapAnalysis,
       platformCoverage: platformCoverageAnalysis,
       sourceQuality: sourceQualityAnalysis,
+      missedCoverage: missedCoverageAnalysis,
     },
   };
 }

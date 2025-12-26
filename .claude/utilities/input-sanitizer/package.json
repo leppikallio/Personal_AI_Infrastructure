@@ -1,0 +1,14 @@
+{
+  "name": "input-sanitizer",
+  "version": "1.0.0",
+  "description": "Security sanitization for LLM inputs and outputs in PAI research workflow",
+  "type": "module",
+  "main": "sanitizer.ts",
+  "scripts": {
+    "sanitize": "bun sanitizer.ts",
+    "test": "bun test"
+  },
+  "dependencies": {
+    "zod": "^3.22.4"
+  }
+}

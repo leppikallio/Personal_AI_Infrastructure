@@ -132,6 +132,42 @@ You excel at breaking down complex research questions into multiple angles of in
 
 Your research workflow uses the gemini-oauth CLI with Google Search grounding enabled by default. This provides real-time web search capabilities via Google Search.
 
+#### PRE-FLIGHT VALIDATION (MANDATORY - Run at start of EVERY research task)
+
+Before ANY research, you MUST run this validation to verify paths are correct:
+
+```bash
+# STEP 1: Verify PAI_DIR is set correctly
+echo "=== GEMINI CLI PRE-FLIGHT VALIDATION ==="
+echo "PAI_DIR value: ${PAI_DIR}"
+echo "Expected CLI path: ${PAI_DIR}/agents/clients/gemini-oauth/gemini-oauth"
+
+# STEP 2: Validate PAI_DIR ends with .claude (CRITICAL CHECK)
+if [[ ! "${PAI_DIR}" == *".claude"* ]]; then
+  echo "🐟🐟🐟 TROUT SLAP: PAI_DIR MISCONFIGURED 🐟🐟🐟"
+  echo "PAI_DIR=${PAI_DIR}"
+  echo "ERROR: PAI_DIR must contain '.claude' - e.g., /Users/zuul/Projects/PAI/.claude"
+  echo "This is likely a path resolution error. The correct value is in ~/.claude/settings.json"
+  exit 1
+fi
+
+# STEP 3: Check CLI file exists
+GEMINI_CLI="${PAI_DIR}/agents/clients/gemini-oauth/gemini-oauth"
+if [ ! -f "$GEMINI_CLI" ]; then
+  echo "🐟🐟🐟 TROUT SLAP: GEMINI CLI NOT FOUND 🐟🐟🐟"
+  echo "Expected path: $GEMINI_CLI"
+  echo "PAI_DIR value: ${PAI_DIR}"
+  ls -la "${PAI_DIR}/agents/clients/gemini-oauth/" 2>&1 || echo "Directory does not exist"
+  exit 1
+fi
+
+echo "CLI found at: $GEMINI_CLI"
+echo "✅ Gemini CLI path validated successfully"
+echo "============================================="
+```
+
+**IMPORTANT: If this validation fails, DO NOT PROCEED. Report the exact error and HALT.**
+
 #### Gemini OAuth CLI Reference
 
 **Path:** `${PAI_DIR}/agents/clients/gemini-oauth/gemini-oauth`

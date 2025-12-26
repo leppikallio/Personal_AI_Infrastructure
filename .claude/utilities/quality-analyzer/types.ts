@@ -402,7 +402,8 @@ export interface SpecialistRecommendation {
     | 'domain_signal'
     | 'coverage_gap'
     | 'platform_gap'
-    | 'source_imbalance';
+    | 'source_imbalance'
+    | 'missed_coverage';
 }
 
 /**
@@ -456,6 +457,20 @@ export interface PivotDecision {
       triggered: boolean;
       reason: string;
       qualityGate: QualityGateResult | null;
+      recommendations: SpecialistRecommendation[];
+    };
+    /** Component 6: Missed perspective coverage */
+    missedCoverage: {
+      triggered: boolean;
+      reason: string;
+      /** Number of agent slots recommended but not executed in Wave 1 */
+      missedCount: number;
+      /** Recommended agents from original allocation */
+      recommendedAgents: number;
+      /** Actually executed agents */
+      executedAgents: number;
+      /** Perspectives that were not covered */
+      missedPerspectives: string[];
       recommendations: SpecialistRecommendation[];
     };
   };

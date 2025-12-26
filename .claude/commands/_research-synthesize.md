@@ -42,6 +42,189 @@ After completing this phase:
 
 ## STEP-BY-STEP WORKFLOW
 
+### STEP -1: Entry Gate - Citation Validation MUST Be Complete (CONSTITUTIONAL)
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│           SYNTHESIS ENTRY GATE - CITATION VALIDATION                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  BEFORE ANY SYNTHESIS WORK, YOU MUST VERIFY:                            │
+│                                                                          │
+│  1. .citations-validated marker exists in $SESSION_DIR/analysis/        │
+│  2. validated-citations-pool.md exists                                  │
+│                                                                          │
+│  IF EITHER IS MISSING → DO NOT PROCEED                                  │
+│                                                                          │
+│  Synthesizing without validated citations = HALLUCINATIONS IN OUTPUT    │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+**Run this verification FIRST:**
+
+```bash
+set +H  # Disable history expansion
+PAI_DIR="${HOME}/.claude"
+
+# GATE 1: Check marker exists
+if [ ! -f "$SESSION_DIR/analysis/.citations-validated" ]; then
+  echo "🛑🛑🛑 ENTRY GATE FAILED: CITATION VALIDATION NOT COMPLETE 🛑🛑🛑"
+  echo ""
+  echo "The .citations-validated marker does not exist."
+  echo "This means citation validation was either:"
+  echo "  - Skipped entirely"
+  echo "  - Run in background and not yet complete"
+  echo "  - Failed with an error"
+  echo ""
+  echo "ACTION REQUIRED:"
+  echo "1. Go back to Phase 2.5 (/_research-collect-validate)"
+  echo "2. Run citation validation as a BLOCKING operation"
+  echo "3. Wait for it to complete"
+  echo "4. Verify .citations-validated marker exists"
+  echo "5. Then return to synthesis"
+  echo ""
+  echo "DO NOT PROCEED WITH SYNTHESIS."
+  exit 1
+fi
+
+# GATE 2: Check validated pool exists
+if [ ! -f "$SESSION_DIR/analysis/validated-citations-pool.md" ]; then
+  echo "🛑🛑🛑 ENTRY GATE FAILED: VALIDATED CITATION POOL MISSING 🛑🛑🛑"
+  echo ""
+  echo "The validated-citations-pool.md file does not exist."
+  echo "This file is REQUIRED for synthesis - it contains ONLY verified citations."
+  echo ""
+  echo "Without this file, synthesis will use unvalidated citations,"
+  echo "which may include hallucinated URLs from research agents."
+  echo ""
+  echo "ACTION REQUIRED:"
+  echo "1. Re-run /_research-collect-validate"
+  echo "2. Ensure it creates validated-citations-pool.md"
+  echo "3. Then return to synthesis"
+  exit 1
+fi
+
+echo "✅ Entry gate passed: Citation validation complete"
+echo "   Marker: $SESSION_DIR/analysis/.citations-validated"
+echo "   Pool: $SESSION_DIR/analysis/validated-citations-pool.md"
+```
+
+**If gate fails:** Return to `/_research-collect` and complete Sub-Phase 5 (Citation Validation) properly.
+
+---
+
+### STEP 0: Initialize Sub-Phase Tracking (MANDATORY)
+
+**Before executing any step, set up TodoWrite with all sub-phases visible:**
+
+```typescript
+TodoWrite({ todos: [
+  { content: "Phase 3: Synthesize findings", status: "in_progress", activeForm: "Synthesizing findings" },
+  { content: "  3.0: Pool all citations", status: "pending", activeForm: "Pooling citations" },
+  { content: "  3.1: Launch N summarizers", status: "pending", activeForm: "Launching summarizers" },
+  { content: "  3.2: Cross-perspective synthesis", status: "pending", activeForm: "Running cross-synthesis" },
+  { content: "  3.3: Generate task graph", status: "pending", activeForm: "Generating task graph" },
+  { content: "  3.4: Platform coverage check", status: "pending", activeForm: "Checking platform coverage" },
+]})
+```
+
+**Update sub-phase status as you complete each one. User MUST see progress.**
+
+---
+
+### Step 2.9: Agent Output Security Scan (Pre-Synthesis)
+
+**MANDATORY: Scan all agent outputs for security concerns before synthesis**
+
+Research agents fetch external content that may contain:
+- Prompt injection patterns (from malicious sites or security research examples)
+- Shell injection attempts that could affect downstream processing
+- Path traversal patterns
+
+**This step DETECTS and LOGS but does NOT block** - legitimate security research may contain injection examples.
+
+**Step 2.9a: Scan Wave 1 and Wave 2 Outputs**
+
+```bash
+set +H  # Disable history expansion
+SANITIZER="${PAI_DIR}/utilities/input-sanitizer/sanitizer.ts"
+SECURITY_REPORT="${SESSION_DIR}/analysis/agent-output-security-scan.md"
+
+echo "# Agent Output Security Scan" > "$SECURITY_REPORT"
+echo "" >> "$SECURITY_REPORT"
+echo "**Scan Date:** $(date)" >> "$SECURITY_REPORT"
+echo "**Session:** ${SESSION_ID}" >> "$SECURITY_REPORT"
+echo "" >> "$SECURITY_REPORT"
+
+TOTAL_WARNINGS=0
+FILES_SCANNED=0
+
+# Scan all agent output files
+for output_dir in wave-1 wave-2; do
+  if [ -d "${SESSION_DIR}/${output_dir}" ]; then
+    for output_file in "${SESSION_DIR}/${output_dir}"/*.md; do
+      [ -f "$output_file" ] || continue
+      FILES_SCANNED=$((FILES_SCANNED + 1))
+      FILENAME=$(basename "$output_file")
+
+      # Check for prompt injection patterns
+      INJECTION_CHECK=$(bun "$SANITIZER" --check "$(cat "$output_file")" 2>/dev/null || echo '{"detected":false}')
+      DETECTED=$(echo "$INJECTION_CHECK" | jq -r '.detected // false')
+
+      if [ "$DETECTED" = "true" ]; then
+        PATTERNS=$(echo "$INJECTION_CHECK" | jq -r '.patterns | join(", ")')
+        echo "## ⚠️ $FILENAME" >> "$SECURITY_REPORT"
+        echo "" >> "$SECURITY_REPORT"
+        echo "**Patterns Detected:** $PATTERNS" >> "$SECURITY_REPORT"
+        echo "" >> "$SECURITY_REPORT"
+        echo "**Note:** This may be legitimate security research content or a prompt injection attempt. Review manually if concerns arise." >> "$SECURITY_REPORT"
+        echo "" >> "$SECURITY_REPORT"
+        TOTAL_WARNINGS=$((TOTAL_WARNINGS + 1))
+      fi
+    done
+  fi
+done
+
+# Summary
+echo "---" >> "$SECURITY_REPORT"
+echo "" >> "$SECURITY_REPORT"
+echo "## Summary" >> "$SECURITY_REPORT"
+echo "" >> "$SECURITY_REPORT"
+echo "- **Files Scanned:** $FILES_SCANNED" >> "$SECURITY_REPORT"
+echo "- **Security Warnings:** $TOTAL_WARNINGS" >> "$SECURITY_REPORT"
+echo "- **Status:** $([ $TOTAL_WARNINGS -eq 0 ] && echo '✅ Clean' || echo '⚠️ Review recommended')" >> "$SECURITY_REPORT"
+echo "" >> "$SECURITY_REPORT"
+
+if [ $TOTAL_WARNINGS -gt 0 ]; then
+  echo "⚠️ SECURITY SCAN: $TOTAL_WARNINGS file(s) contain potential injection patterns"
+  echo "   Report: $SECURITY_REPORT"
+  echo "   NOTE: Proceeding to synthesis - patterns may be legitimate security research content"
+else
+  echo "✅ SECURITY SCAN: All $FILES_SCANNED files clean"
+fi
+```
+
+**Step 2.9b: Security Scan Decision**
+
+The scan is **informational only** - synthesis continues regardless because:
+1. Security research legitimately contains injection examples
+2. Academic papers on LLM security show attack patterns
+3. Blocking would prevent researching security topics
+
+**However:** The security report is preserved in `analysis/agent-output-security-scan.md` for review if the final synthesis contains unexpected content.
+
+**Integration with PAI Agent Guardrails:**
+
+Research agents have strong identity anchoring (see agent definition `.md` files):
+- MANDATORY FIRST ACTION sections
+- Structured output requirements
+- Voice system integration
+
+These guardrails provide defense-in-depth against external content influencing agent behavior.
+
+---
+
 ### Step 3.0: Citation Pooling (M11 - NEW)
 
 **⚠️ CRITICAL: Build unified citation pool BEFORE synthesis begins**
@@ -57,6 +240,7 @@ This step extracts all citations from all agent outputs and creates a unified, r
 **Step 3.0a: Extract Citations from All Agent Files**
 
 ```bash
+set +H  # Disable history expansion
 # Create unified citations file
 UNIFIED_CITATIONS="${SESSION_DIR}/analysis/unified-citations.md"
 
@@ -107,6 +291,7 @@ After extracting all citations, create a mapping table:
 **Step 3.0d: Write Unified Citations File**
 
 ```bash
+set +H  # Disable history expansion
 cat > "$UNIFIED_CITATIONS" <<EOF
 # Unified Citation Pool
 
@@ -150,129 +335,81 @@ echo "📚 Unified citation pool written to: $UNIFIED_CITATIONS"
 ---
 
 
-### Step 3.1: Pre-Synthesis Summary Generation (M12 - NEW)
+### Step 3.1+3.2: Parallel Synthesis (M13.2 - MANDATORY)
 
-**⚠️ CRITICAL: Condense raw research files to prevent context overflow during synthesis**
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                     PARALLEL SYNTHESIS LAW                               │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  YOU MUST USE /_research-synthesize-parallel                            │
+│                                                                          │
+│  DO NOT:                                                                 │
+│      ❌ Launch a single "synthesis agent" directly                      │
+│      ❌ Use synthesis-researcher without the parallel orchestrator      │
+│      ❌ Skip the perspective-summarizer step                            │
+│      ❌ "Optimize" by going straight to synthesis                       │
+│                                                                          │
+│  THE SLASH COMMAND IS THE AUTHORITY, NOT YOUR JUDGMENT.                 │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-Raw research files total ~216KB for 8 agents. This causes context overflow during synthesis (400KB+ total). This step condenses findings to ~60KB while preserving all citations.
-
-**Step 3.1a: Generate Research Summary**
-
-For each agent file in wave-1/ and wave-2/, create a condensed summary:
-
-```bash
-RESEARCH_SUMMARY="${SESSION_DIR}/analysis/research-summary.md"
-
-cat > "$RESEARCH_SUMMARY" << 'HEADER'
-# Research Summary (Pre-Synthesis Condensation)
-
-**Generated:** $(date)
-**Session:** ${SESSION_ID}
-**Purpose:** Condensed findings for synthesis sub-agent (M12)
+**Why Parallel is REQUIRED (not optional):**
+- Single-agent synthesis causes context overflow with 200-450KB input
+- Each perspective-summarizer gets FRESH context (no degradation)
+- N files processed concurrently = faster completion
+- Cross-perspective synthesizer receives organized summaries = better synthesis
+- Citation utilization improves dramatically with structured input
 
 ---
 
-HEADER
+**INVOKE THE PARALLEL SYNTHESIS ORCHESTRATOR:**
+
+Use the SlashCommand tool to run:
+```
+/_research-synthesize-parallel $SESSION_DIR
 ```
 
-**Step 3.1b: Condensation Template Per Agent (~150 lines each)**
+This orchestrator will:
+1. Create `$SESSION_DIR/summaries/` directory
+2. Count perspective files dynamically (wave-1/*.md + wave-2/*.md)
+3. Launch N perspective-summarizer agents IN PARALLEL
+4. Wait for ALL summarizers to complete
+5. Verify all summaries created
+6. Launch single cross-perspective-synthesizer agent (opus model)
+7. Verify final-synthesis.md meets quality gates
 
-For each agent file, extract and condense to this format:
+**Gate Verification:**
+```bash
+set +H  # Disable history expansion
+PAI_DIR="${HOME}/.claude"
+bun "${PAI_DIR}/utilities/research-orchestrator/cli.ts" verify "$SESSION_DIR" parallel-synthesis-complete
+```
+
+---
+
+**After /_research-synthesize-parallel completes, verify:**
+- [ ] `final-synthesis.md` exists and is 15-40KB
+- [ ] Citation utilization is 60%+ (from orchestrator report)
+- [ ] All perspectives from query-analysis.json are covered
+- [ ] summaries/ directory contains N summary files
+
+**If Parallel Synthesis Fails:**
+- Check `$SESSION_DIR/summaries/` for missing files
+- Verify unified-citations.md exists
+- Check orchestrator output for specific agent failures
+
+---
+
+**LEGACY FALLBACK (Use only if parallel fails):**
+
+If parallel synthesis cannot complete, fall back to the old synthesis-researcher approach:
+1. Generate manual research-summary.md (condense each agent file to ~150 lines)
+2. Launch synthesis-researcher with research-summary.md + unified-citations.md
 
 ```markdown
-## Agent: [agent-name]
-**Perspective:** [perspective title from query-analysis.json]
-**File:** [filename]
-**Domain:** [domain]
-**Confidence:** [X]%
-**Original Size:** [X] KB
-
-### Key Findings (with citation references)
-
-1. **[Finding category]:**
-   - [Specific finding with citation ref, e.g., "13.5% adoption rate [4]"]
-   - [Related finding [4], [17]]
-
-2. **[Finding category]:**
-   - [Finding with citation ref]
-   - [Supporting detail [N]]
-
-3. **[Finding category]:**
-   - [Finding with citation refs]
-
-### Citations Used (Agent's Original Numbers)
-
-| Agent Ref | Unified Ref | Short Description |
-|-----------|-------------|-------------------|
-| [1] | [4] | Eurostat AI adoption data |
-| [2] | [17] | Denmark AI leadership report |
-| [3] | [N] | ... |
-
-### Key Quotes
-
-> "[Exact quote from source]" - [Source name] [N]
-
-> "[Another important quote]" - [Source] [N]
-
-### Unique Insights (Not Found Elsewhere)
-
-- [Insight unique to this agent's perspective]
-- [Another unique insight]
-
----
-```
-
-**Step 3.1c: Concatenate All Agent Summaries**
-
-```bash
-# Process Wave 1 agents
-for agent_file in ${SESSION_DIR}/wave-1/*.md; do
-  echo "Processing: $agent_file"
-  # Generate summary using the template above
-  # Append to research-summary.md
-done
-
-# Process Wave 2 agents if they exist
-if [ -d "${SESSION_DIR}/wave-2" ]; then
-  for agent_file in ${SESSION_DIR}/wave-2/*.md; do
-    echo "Processing: $agent_file"
-    # Generate summary using the template above
-    # Append to research-summary.md
-  done
-fi
-
-echo "📝 Research summary generated: $RESEARCH_SUMMARY"
-wc -l "$RESEARCH_SUMMARY"  # Target: ~1200 lines (~60KB)
-```
-
-**Target Sizes:**
-- ~150 lines per agent
-- 8 agents = ~1200 lines total
-- ~60KB condensed (vs. 216KB raw)
-
----
-
-
-### Step 3.2: Launch Synthesis Sub-Agent (M12 - NEW)
-
-**⚠️ CRITICAL: Delegate synthesis to fresh-context sub-agent**
-
-The synthesis-researcher agent receives FRESH context with only:
-- Agent instructions: ~15KB
-- Research summary: ~60KB
-- Unified citations: ~15KB
-- **Total: ~90KB** (vs. 400KB+ before M12)
-
-**Step 3.2a: Prepare Sub-Agent Input**
-
-Ensure these files exist in `${SESSION_DIR}/analysis/`:
-- `research-summary.md` (from Step 3.1)
-- `unified-citations.md` (from Step 3.0)
-
-**Step 3.2b: Launch Synthesis Sub-Agent**
-
-```markdown
-Use the Task tool to launch synthesis-researcher:
+Use the Task tool to launch synthesis-researcher (legacy):
 
 Prompt:
 ---
@@ -302,19 +439,6 @@ Report completion with citation utilization metrics.
 ---
 ```
 
-**Step 3.2c: Monitor Sub-Agent Quality**
-
-After synthesis-researcher completes, verify:
-- [ ] `final-synthesis.md` exists and is 15-40KB
-- [ ] Citation utilization is 60%+ (check agent's report)
-- [ ] All perspectives from query-analysis.json are covered
-- [ ] Six-part structure is present
-
-**If Sub-Agent Fails:**
-- Check for context issues (shouldn't happen with fresh context)
-- Verify input files exist and are properly formatted
-- Re-launch with corrected inputs if needed
-
 ---
 
 
@@ -339,6 +463,7 @@ Aggregate data from all phases:
 **Step 3.6b: Write Task Graph to Session Directory**
 
 ```bash
+set +H  # Disable history expansion
 # Write task graph to analysis directory
 cat > "$SESSION_DIR/analysis/task-graph.md" <<EOF
 # Research Task Graph
@@ -468,6 +593,7 @@ This section enables {{ENGINEER_NAME}} to make informed judgment on whether foll
 **Generate from platform-coverage.md:**
 
 ```bash
+set +H  # Disable history expansion
 # Read coverage report and format for synthesis
 if [ -f "$SESSION_DIR/analysis/platform-coverage.md" ]; then
   echo "" >> "$SESSION_DIR/final-synthesis.md"

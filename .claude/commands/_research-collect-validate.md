@@ -61,6 +61,7 @@ LLMs frequently hallucinate citations - URLs that don't exist, papers never writ
 **Step 2.7a: Extract All Agent Citations**
 
 ```bash
+set +H  # Disable history expansion
 # CRITICAL: Run this BEFORE synthesis - validates agent outputs
 # Extract all URLs from Wave 1 + Wave 2 research files (excludes analysis/)
 find $SESSION_DIR/wave-1 $SESSION_DIR/wave-2 -name "*.md" 2>/dev/null | xargs grep -ohE "https?://[^\s\)\]\>\"']+" | sort -u > $SESSION_DIR/analysis/agent-citations-all.txt
@@ -72,6 +73,7 @@ echo "📋 Total agent citations to validate: $TOTAL_CITATION_COUNT"
 **Step 2.7b: Determine Validation Strategy**
 
 ```bash
+set +H  # Disable history expansion
 # Validation strategy based on citation count
 if [ "$TOTAL_CITATION_COUNT" -le 30 ]; then
   echo "📋 Strategy: FULL VALIDATION (≤30 citations)"
@@ -208,6 +210,7 @@ For EACH citation:
 After validators complete:
 
 ```bash
+set +H  # Disable history expansion
 # Count validation results
 echo ""
 echo "=== PRE-SYNTHESIS CITATION VALIDATION RESULTS ==="
@@ -241,6 +244,7 @@ This report enables:
 4. Accountability and transparency
 
 ```bash
+set +H  # Disable history expansion
 # Create hallucination report - separate file for visibility
 cat > "$SESSION_DIR/analysis/hallucination-report.md" << 'HALLUCINATION_HEADER'
 # 🚨 Citation Hallucination Report
