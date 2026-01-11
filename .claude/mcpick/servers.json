@@ -41,6 +41,11 @@
       }
     },
     {
+      "name": "playwright-webkit",
+      "command": "bunx",
+      "args": ["@playwright/mcp@latest", "--browser=webkit"]
+    },
+    {
       "name": "arxiv-mcp-server",
       "command": "uv",
       "args": ["tool", "run", "arxiv-mcp-server", "--storage-path", "/Users/zuul/Documents/arxiv"]

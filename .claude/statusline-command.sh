@@ -3,6 +3,17 @@
 # Read JSON input from stdin
 input=$(cat)
 
+# Lock file for ccusage data updates
+LOCK_FILE="/tmp/.claude_ccusage.lock"
+
+# Cleanup function to remove lock on exit
+cleanup_lock() {
+    rmdir "$LOCK_FILE" 2>/dev/null
+}
+
+# Set trap to clean up lock on any exit (including errors)
+trap cleanup_lock EXIT
+
 # Get Digital Assistant configuration from environment
 DA_NAME="${DA:-Assistant}"  # Assistant name
 DA_COLOR="${DA_COLOR:-purple}"  # Color for the assistant name
@@ -14,9 +25,8 @@ model_name=$(echo "$input" | jq -r '.model.display_name')
 # Get directory name
 dir_name=$(basename "$current_dir")
 
-# Cache file and lock file for ccusage data
+# Cache file for ccusage data
 CACHE_FILE="/tmp/.claude_ccusage_cache"
-LOCK_FILE="/tmp/.claude_ccusage.lock"
 CACHE_AGE=30   # 30 seconds for more real-time updates
 
 # Count items from specified directories
@@ -55,9 +65,6 @@ project_cost=""
 session_cost=""
 cached_dir=""
 
-# Reset date files
-SESSION_RESET_FILE="$claude_dir/cost_reset_session"
-
 # Check if cache exists and load it
 if [ -f "$CACHE_FILE" ]; then
     # Always load cache data first (if it exists)
@@ -80,99 +87,80 @@ elif [ -f "$CACHE_FILE" ]; then
     fi
 fi
 
-# Helper function to extract cost from ccusage output
-extract_cost() {
-    local output="$1"
-    if [ -n "$output" ]; then
-        echo "$output" | awk -F'│' '{print $9}' | sed 's/^ *//;s/ *$//'
+# Helper function to format cost
+format_cost() {
+    local cost="$1"
+    if [ -n "$cost" ] && [ "$cost" != "null" ] && [ "$cost" != "0" ]; then
+        echo "$cost" | LC_ALL=C awk '{printf "$%.2f", $1}'
     else
-        echo "\$0.00"
+        echo "N/A"
     fi
-}
-
-# Helper function to run ccusage with timeout
-run_ccusage() {
-    local args="$1"
-    local result=""
-    if command -v gtimeout >/dev/null 2>&1; then
-        result=$(gtimeout 5 bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-    elif command -v timeout >/dev/null 2>&1; then
-        result=$(timeout 5 bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-    else
-        result=$(bunx ccusage $args 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' | grep "│ Total" | head -1)
-    fi
-    echo "$result"
 }
 
 if [ "$cache_needs_update" = true ]; then
     # Try to acquire lock (non-blocking)
     if mkdir "$LOCK_FILE" 2>/dev/null; then
-        # We got the lock - update cache with timeout
+        # We got the lock - update cache
         if command -v bunx >/dev/null 2>&1; then
-            # Get TOTAL cost (no date filter)
-            ccusage_output=$(run_ccusage "")
+            # Get all data via JSON (more reliable than parsing table with truncated numbers)
+            ccusage_json=$(bunx ccusage --json 2>/dev/null)
 
-            if [ -n "$ccusage_output" ]; then
-                # Extract input/output tokens, removing commas and ellipsis
-                daily_input=$(echo "$ccusage_output" | awk -F'│' '{print $4}' | sed 's/[^0-9]//g' | head -c 10)
-                daily_output=$(echo "$ccusage_output" | awk -F'│' '{print $5}' | sed 's/[^0-9]//g' | head -c 10)
-                daily_cost=$(extract_cost "$ccusage_output")
+            if [ -n "$ccusage_json" ]; then
+                # Extract totals from JSON
+                totals=$(echo "$ccusage_json" | jq -r '.totals | "\(.totalCost) \(.totalTokens)"' 2>/dev/null)
+                total_cost_raw=$(echo "$totals" | awk '{print $1}')
+                total_tokens_raw=$(echo "$totals" | awk '{print $2}')
 
-                if [ -n "$daily_input" ] && [ -n "$daily_output" ]; then
-                    daily_total=$((daily_input + daily_output))
-                    daily_tokens=$(printf "%'d" "$daily_total" 2>/dev/null || echo "$daily_total")
+                daily_cost=$(format_cost "$total_cost_raw")
+                if [ -n "$total_tokens_raw" ] && [ "$total_tokens_raw" != "null" ]; then
+                    daily_tokens=$(printf "%'d" "$total_tokens_raw" 2>/dev/null || echo "$total_tokens_raw")
                 fi
             fi
 
-            # Get PROJECT cost (prefix-matching aggregation)
-            # Convert path: /Users/zuul/Projects/PAI/.claude → -Users-zuul-Projects-PAI--claude
-            # Note: ccusage encodes /. as -- (dot is removed), / as -
-            project_prefix=$(echo "$current_dir" | sed 's|/\.|--|g; s|/|-|g')
-            project_cost=$(bunx ccusage -i --json 2>/dev/null | \
-                jq -r --arg prefix "$project_prefix" '
-                .projects | to_entries |
-                map(select(.key | startswith($prefix))) |
-                map(.value | map(.totalCost) | add) |
-                add // 0
+            # Get PROJECT cost based on git root
+            git_root=$(cd "$current_dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null)
+            if [ -n "$git_root" ]; then
+                # Convert path to ccusage key format: /path/to/dir → -path-to-dir
+                project_key=$(echo "$git_root" | sed 's|/|-|g')
+
+                # Get project cost from -i (by project) JSON output
+                project_json=$(bunx ccusage -i --json 2>/dev/null)
+                project_cost_raw=$(echo "$project_json" | jq -r --arg key "$project_key" '
+                    .projects | to_entries |
+                    map(select(.key | startswith($key))) |
+                    map(.value | map(.totalCost) | add) |
+                    add // 0
                 ' 2>/dev/null)
-            if [ -n "$project_cost" ] && [ "$project_cost" != "null" ] && [ "$project_cost" != "0" ]; then
-                project_cost=$(echo "$project_cost" | LC_ALL=C awk '{printf "$%.2f", $1}')
+                project_cost=$(format_cost "$project_cost_raw")
             else
-                project_cost="$daily_cost"  # Fallback
+                project_cost="N/A"
             fi
 
-            # Get SESSION cost (since today OR session reset, whichever is later)
-            today=$(date +%Y%m%d)
-            session_date="$today"  # Default to today (auto daily reset)
-            if [ -f "$SESSION_RESET_FILE" ]; then
-                stored_session=$(cat "$SESSION_RESET_FILE")
-                # Use whichever is more recent
-                if [[ "$stored_session" > "$today" ]] || [[ "$stored_session" == "$today" ]]; then
-                    session_date="$stored_session"
-                fi
-            fi
-            session_output=$(run_ccusage "--since $session_date")
-            session_cost=$(extract_cost "$session_output")
+            # Get TODAY's cost
+            today=$(date +%Y-%m-%d)
+            today_cost_raw=$(echo "$ccusage_json" | jq -r --arg today "$today" '
+                .daily | map(select(.date == $today)) | map(.totalCost) | add // 0
+            ' 2>/dev/null)
+            session_cost=$(format_cost "$today_cost_raw")
 
             # Write to cache file
-            if [ -n "$daily_tokens" ]; then
+            if [ -n "$daily_cost" ]; then
                 echo "daily_tokens=\"$daily_tokens\"" > "$CACHE_FILE"
                 printf "daily_cost=\"%s\"\n" "${daily_cost//$/\\$}" >> "$CACHE_FILE"
                 printf "project_cost=\"%s\"\n" "${project_cost//$/\\$}" >> "$CACHE_FILE"
                 printf "session_cost=\"%s\"\n" "${session_cost//$/\\$}" >> "$CACHE_FILE"
+                echo "cached_git_root=\"$git_root\"" >> "$CACHE_FILE"
                 echo "cached_dir=\"$current_dir\"" >> "$CACHE_FILE"
                 echo "cache_updated=\"$(date)\"" >> "$CACHE_FILE"
             fi
         fi
-
-        # Always remove lock when done
-        rmdir "$LOCK_FILE" 2>/dev/null
+        # Lock is cleaned up automatically by trap
     else
-        # Someone else is updating - check if lock is stale (older than 30 seconds)
+        # Someone else is updating - check if lock is stale (older than 60 seconds)
         if [ -d "$LOCK_FILE" ]; then
             lock_age=$(($(date +%s) - $(stat -f%m "$LOCK_FILE" 2>/dev/null || echo 0)))
-            if [ $lock_age -gt 30 ]; then
-                # Stale lock - remove it and try again
+            if [ $lock_age -gt 60 ]; then
+                # Stale lock - remove it (ccusage can take ~15s, so 60s is safe)
                 rmdir "$LOCK_FILE" 2>/dev/null
             fi
         fi

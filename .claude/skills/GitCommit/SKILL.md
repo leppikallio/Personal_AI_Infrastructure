@@ -83,7 +83,40 @@ Run all validation commands - **fail fast if any fails**:
 2. **STOP** - do not proceed to commit message
 3. Suggest fix (e.g., "Run `bun run format` to fix formatting")
 
-### Step 6: Generate Commit Message
+### Step 6: Documentation Check (Significant Changes)
+
+**Trigger:** If staged files include any of:
+- Files in `src/` that export public APIs (index.ts, main entry points)
+- Config files (`*.json` in `config/`)
+- Agent prompts (`prompts/*.md`, `agents/*.md`)
+- Schema changes (`*.schema.json`)
+- Docker/container files (`Dockerfile*`, `docker-compose*`)
+
+**Check:**
+1. Identify related documentation in `docs/` or `README.md`
+2. Prompt user: "This commit changes [X]. Related docs: [Y]. Update docs?"
+3. If yes: pause commit, user updates docs, re-run skill
+4. If no: proceed (user accepts doc drift)
+
+**Auto-detect doc-worthy changes:**
+```bash
+# Check for export changes
+git diff --staged --name-only | grep -E '(index\.ts|exports\.ts|mod\.ts)$'
+
+# Check for config/schema changes
+git diff --staged --name-only | grep -E '\.(schema\.)?json$' | grep -v 'package'
+
+# Check for container changes
+git diff --staged --name-only | grep -E '(Dockerfile|docker-compose)'
+```
+
+**Skip if:**
+- Commit is `fix:` type (bug fixes rarely need doc updates)
+- Commit is `test:` type (tests don't need docs)
+- Commit is `style:` type (formatting only)
+- Only test files changed (`*.test.ts`, `*.spec.ts`)
+
+### Step 7: Generate Commit Message
 
 **Format: Conventional Commits**
 
@@ -112,7 +145,7 @@ Co-Authored-By: Claude <MODEL_NAME> <noreply@anthropic.com>
 
 **Scope:** Optional, indicates area (e.g., `feat(api):`, `fix(auth):`)
 
-### Step 7: Output for User
+### Step 8: Output for User
 
 Present the commit in this format:
 

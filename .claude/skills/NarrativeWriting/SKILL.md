@@ -19,6 +19,7 @@ ${PAI_DIR}/tools/skill-workflow-notification WorkflowName NarrativeWriting
 |----------|---------|------|
 | **DraftScene** | "write a scene", "draft narrative" | `workflows/DraftScene.md` |
 | **EditScene** | "edit scene", "revise narrative" | `workflows/EditScene.md` |
+| **PolishScene** | "polish story", `scope:polish` | See Polish Mode section below |
 
 ---
 
@@ -31,11 +32,15 @@ ${PAI_DIR}/tools/skill-workflow-notification WorkflowName NarrativeWriting
 | Pattern | Example | Why It Fails |
 |---------|---------|--------------|
 | **List structures** | "There were three issues: first... second... third..." | AI default formatting, even when disguised as prose |
-| **Em-dash overuse** | "The code—surprisingly—worked" | Every AI does this. Readers notice. |
+| **Em-dashes (ANY)** | "The code—surprisingly—worked" | ABSOLUTE BAN. Every AI does this. Zero allowed. Use commas, periods, or parentheses instead. |
 | **Parallel construction** | "Not just X but Y. Not only A but B." | Mechanical rhythm screams "generated" |
 | **Hedging language** | "perhaps," "it's worth noting," "one might argue" | Non-committal AI-speak. Have opinions. |
 | **Summary paragraphs** | "In summary, we learned that..." | Padding, not narrative. Delete these. |
 | **Even pacing** | Every paragraph ~same length | Robotic feel. Humans are messier. |
+| **Dialogue attribution overuse** | `"The code works," I said.` after every line | Telling instead of showing. Use action beats. |
+| **Filler words (as padding)** | "I actually realized", "I just saw" | Padding weakens prose. Keep ONLY when doing comedic/voice work. |
+| **Filter verbs** | "started to", "began to", "tried to" | Distance between subject and action. Use direct verbs. |
+| **Expletive constructions** | "There was a problem", "It was clear that" | Weak openings. Start with strong subject. |
 
 ### REPLACE WITH
 
@@ -48,16 +53,22 @@ ${PAI_DIR}/tools/skill-workflow-notification WorkflowName NarrativeWriting
 | **Run-ons** | Let thoughts tumble together when the moment calls for momentum and you want the reader breathless |
 | **Fragments** | Useful. Sometimes. Here too. |
 | **Wodehouse rhythm** | Interruptions, asides, tangents that circle back eventually |
+| **Action beats** | `"That makes sense." I pulled up the test suite.` - shows instead of tells |
 
 ### Self-Check Before Finalizing
 
 Read the draft aloud. If it sounds like an AI wrote it, it probably does. Specifically:
 
-1. **Count the em-dashes.** More than 2 per 500 words? Too many.
+1. **Count the em-dashes.** ANY em-dashes = FAIL. Zero allowed. Use commas, periods, or parentheses instead.
 2. **Find any lists.** Convert to flowing prose or delete.
 3. **Spot the hedges.** "Perhaps" and "it's worth noting" are red flags.
 4. **Check paragraph lengths.** If they're all similar, vary them.
 5. **Look for summaries.** "In conclusion" or "To summarize" = delete the whole paragraph.
+6. **Count "I said" / "Marvin said".** Replace with action beats. `<Marvin>` tags already identify the speaker.
+7. **Count filler words.** "actually", "just", "rather" - keep only if doing comedic/voice work. Max ~3-5 per 1000 words.
+8. **Find filter verbs.** "started to", "began to" - convert to direct verbs unless gradual process.
+
+**CRITICAL: Em-dash prohibition applies to ALL punctuation forms: — (em-dash), – (en-dash), and even - when used interruptively. Use commas for asides, periods for breaks, parentheses for clarifications.**
 
 ---
 
@@ -119,10 +130,44 @@ User: "Write about how we figured out the race condition"
 
 ---
 
+## MDX/Astro Component Tags (CRITICAL)
+
+**These are REQUIRED for the blog platform. This is NOT "XML in prompts" - these are JSX/MDX component tags that are part of the content format.**
+
+### Required Dialogue Tags
+
+**`<Marvin>` tags are the STANDARD way to denote Marvin's dialogue:**
+
+```mdx
+I was reviewing the code when Marvin interrupted.
+
+<Marvin>"There is one small matter that might warrant attention."</Marvin>
+
+"Oh no. What did I miss?"
+```
+
+- **Always wrap Marvin's dialogue** in `<Marvin></Marvin>` tags
+- **Never wrap Petteri's dialogue** - it's first-person narrative voice
+- This creates visual distinction between narrator (Petteri) and assistant (Marvin)
+
+### Other Common Component Tags
+
+| Tag | Purpose | Example |
+|-----|---------|---------|
+| `<SeriesIntro arc="..."/>` | Series context at story start | `<SeriesIntro arc="Discovery & Foundation"/>` |
+| `<FloatImage ... />` | Floating images in narrative | See examples in blog posts |
+| `<TechnicalAside>` | Technical deep-dive sidebars | For implementation details |
+
+**These are part of the MDX blog platform. Use them as needed.**
+
+---
+
 ## Style Rules
 
 ### DO
 
+- **Use `<Marvin>` tags for ALL Marvin dialogue** - This is not optional, it's the platform standard
+- **Write in flowing, continuous paragraphs** - Keep related thoughts together. Let sentences build momentum with nested clauses and digressions. Wodehouse prose rollicks along in continuous paragraphs; the humor comes from momentum and elaborate verbal constructions, not dramatic pauses. Break paragraphs only for actual topic/scene shifts, never for single-sentence emphasis.
 - **Open with overconfidence** (for mistake scenes): "The implementation was elegant, if I say so myself"
 - **Marvin delivers bad news diplomatically**: "There is one small matter..."
 - **Self-deprecate cheerfully**: "The celebratory coffee feeling evaporated rather quickly"
@@ -130,6 +175,7 @@ User: "Write about how we figured out the race condition"
 - **Let Marvin have the last word** (often)
 - **Describe code in plain language**: "Four sensible entries, and then `public` tagged on at the end"
 - **Use inline code for terms only**: `public`, `w400`, `HMAC-SHA256` (backticks, not blocks)
+- **Use MDX component tags** where appropriate (`<Marvin>`, `<SeriesIntro>`, `<FloatImage>`)
 
 ### DON'T
 
@@ -139,6 +185,7 @@ User: "Write about how we figured out the race condition"
 - **No making Petteri incompetent** - He makes mistakes, but he's capable
 - **No making Marvin smug** - Helpful, not superior
 - **No losing the wit** - If it's not at least a little funny, revise
+- **Don't confuse MDX components with "XML tags to avoid"** - Component tags are part of the blog platform
 
 ### Scene Length
 
@@ -420,16 +467,82 @@ Scenes are reconstructed from real development sessions. Source material locatio
 
 ---
 
+## Polish Mode (`scope:polish`)
+
+**Purpose:** Apply targeted style fixes to stories that have already been edited. The structure is final - you're just cleaning up specific issues.
+
+### When to Use Polish Mode
+
+Use polish mode when:
+- Story has been post-edited (headers, breaks, structure finalized)
+- You want to fix specific issues without rewriting prose
+- Dialogue attribution cleanup is needed
+- You want to apply new style constraints to existing content
+
+**Invoke via:** `/draft-narrative rewrite:/path/to/story.mdx scope:polish`
+
+### What Polish Mode Fixes
+
+| Issue | Action |
+|-------|--------|
+| **"I said" / "I asked"** | Replace with action beats or remove |
+| **"Marvin said" after `</Marvin>`** | Replace with action beat or remove |
+| **Filler words** | Delete unless doing comedic/voice work. Ask: "Is this Bertie's hesitance or AI padding?" |
+| **Filter verbs** | Rewrite "started to", "began to" → direct verb |
+| **Expletive constructions** | Rewrite "There was", "It was" → strong subject |
+| **Em-dashes** | Convert to commas or parentheses |
+| **Banned vocabulary** | Swap the specific word |
+| **Missing `<Marvin>` tags** | Add them |
+
+### What Polish Mode NEVER Touches
+
+- **Headers (`##`)** - Preserve exact text and placement
+- **Pacing breaks (`---`)** - Preserve exact placement
+- **MDX components** - `<Marvin>`, `<FloatImage>`, `<EditorNote>`, etc.
+- **Frontmatter** - YAML between opening `---` markers
+- **Paragraph structure** - Don't combine or split paragraphs
+- **Sentence structure** - Don't rewrite sentences that aren't flagged
+
+### Polish Mode Philosophy
+
+Think "context-aware find-and-replace" not "rewrite". Fix the specific issue in a sentence without touching anything else.
+
+```
+BEFORE: "That makes sense," I said. "We should test it."
+AFTER:  "That makes sense." I pulled up the test suite. "We should test it."
+                           ^^^^^^^^^^^^^^^^^^^^^^^^
+                           Only this part changed
+```
+
+### Polish Mode Self-Check
+
+Before submitting polished output:
+1. Did I only change flagged issues?
+2. Are all `##` headers exactly as they were?
+3. Are all `---` breaks in the same locations?
+4. Did I preserve paragraph structure?
+5. Did I resist the urge to "improve" unflagged prose?
+
+---
+
 ## Validation Checklist
 
 Before finalizing any narrative scene:
 
-**AI Pattern Check (DO FIRST):**
-- [ ] Em-dash count ≤2 per 500 words
+**MDX/Component Tags (DO FIRST):**
+- [ ] ALL Marvin dialogue wrapped in `<Marvin></Marvin>` tags
+- [ ] NO tags around Petteri's dialogue (first-person narrative)
+- [ ] `<SeriesIntro>` used at story start if part of a series
+- [ ] `<FloatImage>` tags used properly for inline images
+- [ ] Component tags not confused with "XML to avoid"
+
+**AI Pattern Check:**
+- [ ] **ZERO em-dashes** (—, –, or interruptive -) - ABSOLUTE BAN
 - [ ] No list structures (even disguised as prose)
 - [ ] No hedging language ("perhaps," "it's worth noting")
 - [ ] No summary/recap paragraphs
 - [ ] Paragraph lengths vary noticeably
+- [ ] Minimal "I said" / "Marvin said" - use action beats instead
 - [ ] Read aloud - does it sound human?
 
 **Style & Tone:**

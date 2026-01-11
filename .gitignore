@@ -94,3 +94,4 @@ history.jsonl
 .claude/.pai-sync-history
 .claude/stats-cache.json
 History/*
+scratchpad/
